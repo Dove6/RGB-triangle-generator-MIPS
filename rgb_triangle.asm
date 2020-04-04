@@ -1,6 +1,6 @@
 .data
-	# BITMAPFILEHEADER
 		.half -1 # padding
+	BITMAPFILEHEADER:
 	bfType:
 		.ascii "BM"
 	bfSize:
@@ -11,7 +11,7 @@
 		.half 0
 	bfOffBits:
 		.word 54
-	# BITMAPINFOHEADER
+	BITMAPINFOHEADER:
 	biSize:
 		.word 40
 	biWidth:
@@ -34,13 +34,45 @@
 		.word 0
 	biClrImportant:
 		.word 0
-	# end marker
-		.byte 255
-		.byte 255
-		.byte 255
-		.byte 255
+	output_filename:
+		.asciiz "result.bmp"
+		.align 2
+	image_data:
+		.space 196608
 
 .text
+		# open output file
+		li $v0, 13
+		la $a0, output_filename
+		li $a1, 1 # write-only mode
+		syscall
+		bltz $v0, exit
+		move $t0, $v0
+
+		# write BMP headers to file
+		li $v0, 15
+		move $a0, $t0
+		la $a1, BITMAPFILEHEADER
+		lw $a2, bfSize
+		lw $t9, biSize
+		addu $a2, $a2, $t9
+		syscall
+		# TODO: error check
+
+		# write image contents to file
+		li $v0, 15
+		move $a0, $t0
+		la $a1, image_data
+		lw $a2, biSizeImage
+		syscall
+		# TODO: error check
+
+		# close the file
+		li $v0, 16
+		move $a0, $t0
+		syscall
+
 		# exit
+	exit:
 		li $v0, 10
 		syscall
