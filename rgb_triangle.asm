@@ -39,22 +39,22 @@
 	output_filename:
 		.asciiz "result.bmp"
 	vertex1_position:
-		.word 128 # x
-		.word 10  # y
+		.half 128 # x
+		.half 10  # y
 	vertex1_color:
 		.byte 0   # b
 		.byte 0   # g
 		.byte 255 # r
 	vertex2_position:
-		.word 10  # x
-		.word 240 # y
+		.half 10  # x
+		.half 240 # y
 	vertex2_color:
 		.byte 0   # b
 		.byte 255 # g
 		.byte 0   # r
 	vertex3_position:
-		.word 245 # x
-		.word 230 # y
+		.half 245 # x
+		.half 230 # y
 	vertex3_color:
 		.byte 255 # b
 		.byte 0   # g
@@ -69,22 +69,63 @@
 		.space 196608
 
 .text
-		# do drawing
-		move $t0, $zero
-		lw $t1, biSizeImage
-		lw $t8, bkg_color
-	loop:
-		andi $t9, $t8, 255
-		sb $t9, image_data($t0)
-		srl $t9, $t8, 8
-		andi $t9, $t9, 255
-		sb $t9, image_data+1($t0)
-		srl $t9, $t8, 16
-		andi $t9, $t9, 255
-		sb $t9, image_data+2($t0)
-		addiu $t0, $t0, 3
-		blt $t0, $t1, loop
+		# rearrange vertices
+		
+		# place useful data in registers
+		# s0 - left side X position
+		# s1 - left side color
+		# s2 - right side X position
+		# s3 - right side color
+		# s4 - background color
+		lw $s4, bkg_color
+		# s5 - memory row base
+		
+		# initialize the loop
+		# t0 - row counter
+		lw $t0, biHeight
+		subiu $t0, $t0, 1
+		# t1 - column counter
+		# t2 - ?
+		# t3 - fill color
+		move $t3, $zero
+		
+	row_loop:
+		bltz $t0, write_file
+		lw $t1, biWidth
+		subiu $t1, $t1, 1
+		# calculate left and right side
+		
+		# calculate row memory offset
+		lw $s5, biHeight
+		subiu $s5, $s5, 1
+		subu $s5, $s5, $t0
+		sll $s5, $s5, 8 # multiply by 256
+		move $t9, $s5
+		sll $s5, $s5, 1
+		addu $s5, $s5, $t9 # multiply by 3 (bytes per pixel)
+		
+	column_loop:
+		bltz $t1, row_loop_end
+		move $t3, $s4
+		# calculate row + column memory offset
+		move $t9, $s5
+		sll $t8, $t1, 1
+		addu $t8, $t8, $t1 # multiply by 3 (bytes per pixel)
+		addu $t9, $t9, $t8
+		
+		sb $t3, image_data($t9)
+		srl $t3, $t3, 8
+		sb $t3, image_data+1($t9)
+		srl $t3, $t3, 8
+		sb $t3, image_data+2($t9)
+		subiu $t1, $t1, 1
+		j column_loop
+	
+	row_loop_end:
+		subiu $t0, $t0, 1
+		j row_loop
 
+	write_file:
 		# open output file
 		li $v0, 13
 		la $a0, output_filename
