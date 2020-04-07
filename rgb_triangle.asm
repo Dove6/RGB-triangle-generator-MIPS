@@ -70,7 +70,7 @@ main:
 	move $a0, $s0
 	move $a1, $s1
 	move $a2, $s2
-	jal draw_triangle
+#	jal draw_triangle
 	
 	# [save to file]
 	write_file:
@@ -160,7 +160,45 @@ generate_bitmap:
 	# parameters:
 	# $a0 - pointer to data of three vertices
 rearrange_vertices:
+	move $t0, $a0
+	lw $t1, 4($t0)
+	lw $t2, 16($t0)
+	lw $t3, 28($t0)
+	bne $t1, $t2, second_check
+	lw $t4, ($t0)
+	lw $t5, 12($t0)
+	sw $t4, 12($t0)
+	sw $t5, ($t0)
+	lw $t4, 4($t0)
+	lw $t5, 16($t0)
+	sw $t4, 16($t0)
+	sw $t5, 4($t0)
+	lw $t4, 8($t0)
+	lw $t5, 20($t0)
+	sw $t4, 20($t0)
+	sw $t5, 8($t0)
+	j sanity_check
 	
+	second_check:
+	bne $t1, $t3, arranged
+	lw $t4, ($t0)
+	lw $t5, 24($t0)
+	sw $t4, 24($t0)
+	sw $t5, ($t0)
+	lw $t4, 4($t0)
+	lw $t5, 28($t0)
+	sw $t4, 28($t0)
+	sw $t5, 4($t0)
+	lw $t4, 8($t0)
+	lw $t5, 32($t0)
+	sw $t4, 32($t0)
+	sw $t5, 8($t0)
+	
+	sanity_check:
+	bne $t1, $t2, arranged
+	# error: not a triangle
+	
+	arranged:
 	jr $ra
 	
 	
@@ -168,69 +206,60 @@ rearrange_vertices:
 	# $a0 - pointer to bitmap details (BITMAPINFOHEADER)
 	# $a1 - pointer to bitmap data
 	# $a2 - pointer to vertices data
-draw_triangle:
+draw_triangle:	
+	# place useful data in registers
+	# s0 - left side X position
+	# s1 - left side color
+	# s2 - right side X position
+	# s3 - right side color
+	# s4 - background color
+#	lw $s4, bkg_color
+	# s5 - memory row base
 	
+	# initialize the loop
+	# t0 - row counter
+#	lw $t0, biHeight
+	subiu $t0, $t0, 1
+	# t1 - column counter
+	# t2 - ?
+	# t3 - fill color
+	move $t3, $zero
+		
+	row_loop:
+	bltz $t0, write_file
+#	lw $t1, biWidth
+	subiu $t1, $t1, 1
+	# calculate left and right side
+		
+	# calculate row memory offset
+#	lw $s5, biHeight
+	subiu $s5, $s5, 1
+	subu $s5, $s5, $t0
+	sll $s5, $s5, 8 # multiply by 256
+	move $t9, $s5
+	sll $s5, $s5, 1
+	addu $s5, $s5, $t9 # multiply by 3 (bytes per pixel)
+		
+	column_loop:
+	bltz $t1, row_loop_end
+	move $t3, $s4
+	# calculate row + column memory offset
+	move $t9, $s5
+	sll $t8, $t1, 1
+	addu $t8, $t8, $t1 # multiply by 3 (bytes per pixel)
+	addu $t9, $t9, $t8
+		
+#	sb $t3, image_data($t9)
+	srl $t3, $t3, 8
+#	sb $t3, image_data+1($t9)
+	srl $t3, $t3, 8
+#	sb $t3, image_data+2($t9)
+	subiu $t1, $t1, 1
+	j column_loop
+	
+	row_loop_end:
+	subiu $t0, $t0, 1
+	j row_loop
+	
+	draw_end:
 	jr $ra
-	
-
-
-
-
-
-		# rearrange vertices
-		
-		# place useful data in registers
-		# s0 - left side X position
-		# s1 - left side color
-		# s2 - right side X position
-		# s3 - right side color
-		# s4 - background color
-#		lw $s4, bkg_color
-		# s5 - memory row base
-		
-		# initialize the loop
-		# t0 - row counter
-#		lw $t0, biHeight
-#		subiu $t0, $t0, 1
-		# t1 - column counter
-		# t2 - ?
-		# t3 - fill color
-#		move $t3, $zero
-		
-#	row_loop:
-#		bltz $t0, write_file
-#		lw $t1, biWidth
-#		subiu $t1, $t1, 1
-		# calculate left and right side
-		
-		# calculate row memory offset
-#		lw $s5, biHeight
-#		subiu $s5, $s5, 1
-#		subu $s5, $s5, $t0
-#		sll $s5, $s5, 8 # multiply by 256
-#		move $t9, $s5
-#		sll $s5, $s5, 1
-#		addu $s5, $s5, $t9 # multiply by 3 (bytes per pixel)
-		
-#	column_loop:
-#		bltz $t1, row_loop_end
-#		move $t3, $s4
-		# calculate row + column memory offset
-#		move $t9, $s5
-#		sll $t8, $t1, 1
-#		addu $t8, $t8, $t1 # multiply by 3 (bytes per pixel)
-#		addu $t9, $t9, $t8
-		
-#		sb $t3, image_data($t9)
-#		srl $t3, $t3, 8
-#		sb $t3, image_data+1($t9)
-#		srl $t3, $t3, 8
-#		sb $t3, image_data+2($t9)
-#		subiu $t1, $t1, 1
-#		j column_loop
-	
-#	row_loop_end:
-#		subiu $t0, $t0, 1
-#		j row_loop
-
-
