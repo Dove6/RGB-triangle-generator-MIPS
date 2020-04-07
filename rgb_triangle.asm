@@ -140,10 +140,12 @@ generate_bitmap:
 	# set variable header data
 	sw $t0, 4($t3) # width
 	sw $t1, 8($t3) # height
-	mulu $t4, $t0, $t1
-	sll $t5, $t4, 1    # }
-	addu $t5, $t5, $t4 # } multiply by 3
-	sw $t5, 20($t3) # pixel data size
+	sll $t4, $t0, 1    #
+	addu $t4, $t4, $t0 # multiply width by 3
+	addiu $t4, $t4, 3 #
+	andi $t4, -4      # round up to nearest word
+	mulu $t4, $t4, $t1
+	sw $t4, 20($t3) # pixel data size
 	# TODO: error on too large data
 	# allocate space for pixel data
 	li $v0, 9
