@@ -25,35 +25,32 @@
 
 	output_filename:
 	.asciiz "result.bmp"
-	vertex1_position:
-	.word 128 # x
-	.word 10  # y
-	vertex1_color:
-	.byte 0   # b
-	.byte 0   # g
-	.byte 255 # r
-	vertex2_position:
-	.word 10  # x
-	.word 240 # y
-	vertex2_color:
-	.byte 0   # b
-	.byte 255 # g
-	.byte 0   # r
-	vertex3_position:
-	.word 245 # x
-	.word 230 # y
-	vertex3_color:
-	.byte 255 # b
-	.byte 0   # g
-	.byte 0   # r
+	
+	vertex_data:
+	# vertex1
+	.word 128 # (+0x00) x
+	.word 10  # (+0x04) y
+	.byte 0   # (+0x08) b
+	.byte 0   # (+0x09) g
+	.byte 255 # (+0x0a) r
+	# vertex2
+	.word 10  # (+0x0c) x
+	.word 240 # (+0x10) y
+	.byte 0   # (+0x14) b
+	.byte 255 # (+0x15) g
+	.byte 0   # (+0x16) r
+	# vertex3
+	.word 245 # (+0x18) x
+	.word 230 # (+0x1c) y
+	.byte 255 # (+0x20) b
+	.byte 0   # (+0x21) g
+	.byte 0   # (+0x22) r
+
 	bkg_color:
 	.align 2
 	.byte 0   # b
 	.byte 255 # g
 	.byte 255 # r
-	image_data:
-	.align 2
-	.space 196608
 
 .text
 main:
@@ -61,11 +58,56 @@ main:
 	li $a0, BITMAP_WIDTH	
 	li $a1, BITMAP_HEIGHT
 	jal generate_bitmap
+	move $s0, $v0
+	move $s1, $v1
+
+	la $s2, vertex_data
+	# [rearrange vertices]
+	move $a0, $s2
+	jal rearrange_vertices
 
 	# [process bitmap]
+	move $a0, $s0
+	move $a1, $s1
+	move $a2, $s2
+	jal draw_triangle
+	
 	# [save to file]
-	# [destroy bitmap]
-	# <nothing>
+	write_file:
+	# open output file
+	li $v0, 13
+	la $a0, output_filename
+	li $a1, 1 # write-only mode
+	syscall
+	bltz $v0, exit
+	move $t0, $v0
+
+	# write BMP headers to file
+	li $v0, 15
+	move $a0, $t0
+	la $a1, BITMAPFILEHEADER
+	lw $a2, 2($a1)
+	syscall
+
+	li $v0, 15
+	move $a0, $t0
+	move $a1, $s0
+	lw $a2, ($a1)
+	syscall
+	# TODO: error check
+
+	# write image contents to file
+	li $v0, 15
+	move $a0, $t0
+	move $a1, $s1
+	lw $a2, 20($s0)
+	syscall
+	# TODO: error check
+
+	# close the file
+	li $v0, 16
+	move $a0, $t0
+	syscall
 
 	exit:
 	li $v0, 10
@@ -90,10 +132,10 @@ generate_bitmap:
 	# copy template data to allocated header
 	move $t4, $zero
 	header_copy_loop:
-	lb $t5, BITMAPINFOHEADER($t4)
+	lw $t5, BITMAPINFOHEADER($t4)
 	addu $t6, $t3, $t4
-	sb $t5, ($t6)
-	addiu $t4, $t4, 1
+	sw $t5, ($t6)
+	addiu $t4, $t4, 4
 	blt $t4, $t2, header_copy_loop
 	# set variable header data
 	sw $t0, 4($t3) # width
@@ -112,6 +154,24 @@ generate_bitmap:
 	move $v0, $t3
 	jr $ra
 	
+	
+	# parameters:
+	# $a0 - pointer to data of three vertices
+rearrange_vertices:
+	
+	jr $ra
+	
+	
+	# parameters:
+	# $a0 - pointer to bitmap details (BITMAPINFOHEADER)
+	# $a1 - pointer to bitmap data
+	# $a2 - pointer to vertices data
+draw_triangle:
+	
+	jr $ra
+	
+
+
 
 
 
@@ -171,34 +231,4 @@ generate_bitmap:
 #		subiu $t0, $t0, 1
 #		j row_loop
 
-#	write_file:
-		# open output file
-#		li $v0, 13
-#		la $a0, output_filename
-#		li $a1, 1 # write-only mode
-#		syscall
-#		bltz $v0, exit
-#		move $t0, $v0
 
-		# write BMP headers to file
-#		li $v0, 15
-#		move $a0, $t0
-#		la $a1, BITMAPFILEHEADER
-#		lw $a2, bfSize
-#		lw $t9, biSize
-#		addu $a2, $a2, $t9
-#		syscall
-		# TODO: error check
-
-		# write image contents to file
-#		li $v0, 15
-#		move $a0, $t0
-#		la $a1, image_data
-#		lw $a2, biSizeImage
-#		syscall
-		# TODO: error check
-
-		# close the file
-#		li $v0, 16
-#		move $a0, $t0
-#		syscall
