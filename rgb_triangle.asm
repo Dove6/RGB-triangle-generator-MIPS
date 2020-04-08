@@ -212,7 +212,7 @@ rearrange_vertices:
 	# $a2 - pointer to vertices data
 draw_triangle:
 	# prologue
-	subiu $sp, $sp, 32
+	subiu $sp, $sp, 4
 	sw $s0, ($sp)
 	sw $s1, 4($sp)
 	sw $s2, 8($sp)
@@ -222,70 +222,126 @@ draw_triangle:
 	sw $s6, 24($sp)
 	sw $s7, 28($sp)
 	
-	# place useful data in registers
-	# $s0 - pointer to bitmap header
-	move $s0, $a0
-	# $s1 - bitmap width
-	lw $s1, 4($s0)
-	# $s2 - pointer to bitmap data
-	move $s2, $a1
-	# $s3 - pointer to vertices data
-	move $s3, $a2
-	# $s4 - background color
-	li $s4, BKG_COLOR
-	# $s5 - memory offset
+	# stack layout
+	# (+0x24) vertex max Y
+	# (+0x20) vertex min Y
+	# (+0x00) saved registers (8 * 4 bytes)
 	
-	# $t0 - row counter
-	lw $t0, 8($s0)
-	subiu $t0, $t0, 1
-	# $t1 - column counter
-	# $t2 - left side X position
-	# $t3 - left side color
-	# $t4 - right side X position
-	# $t5 - right side color
-	# $t6 - fill color
+	# saved registers layout
+	# $s0 - row counter
+	# $s1 - column counter
+	# $s2 - pixel memory offset
+	# $s3 - left side X position
+	# $s4 - left side color
+	# $s5 - right side X position
+	# $s6 - right side color
+	# $s7 - background color
+
+	# temporary registers layout
+	# $t0 - current color
+	# $t1-$t9 - temporary
+	
+	lw $s0, 8($a0)
+	subiu $s0, $s0, 1
+	li $s7, BKG_COLOR
+
+
+
+	# calculate min and max vertex Y
+	lw $t7, 4($a2)
+	move $t9, $t7 # max Y
+	move $t8, $t7 # min Y
+	lw $t7, 16($a2)
+	sgtu $t6, $t7, $t9
+	movn $t9, $t7, $t6
+	sltu $t6, $t7, $t8
+	movn $t8, $t7, $t6
+	lw $t7, 28($a2)
+	sgtu $t6, $t7, $t9
+	movn $t9, $t7, $t6
+	sltu $t6, $t7, $t8
+	movn $t8, $t7, $t6
+	sw $t8, 32($sp)
+	sw $t9, 36($sp)
 	
 	# initialize the loop
-	# $t0 - row counter (already initialized)
-	# $t1 - column counter
-	# $t6 - fill color
 		
 	row_loop:
-	bltz $t0, draw_end
-	move $t1, $s1
-	subiu $t1, $t1, 1
+	bltz $s0, draw_end
+	lw $s1, 4($a0)
+	subiu $s1, $s1, 1
+	
+	move $s3, $zero
+	move $s5, $zero
+	# check if Ymin <= Y <= Ymax
+	lw $t8, 32($sp)
+	lw $t9, 36($sp)
+	subu $t8, $s0, $t8
+	subu $t9, $s0, $t9
+	mul $t8, $t8, $t9
+	mfhi $t9
+	slti $t9, $t9, 0
+	seq $t8, $t8, 0
+	or $t9, $t8, $t9
+	beqz $t9, calc_offset # $t9 == 0 (positive product, not in range)
+	
 	# calculate left and right side
-		
+	#left
+	lw $t9, ($a2)
+	lw $t8, 4($a2)
+	lw $t7, 12($a2)
+	lw $t6, 16($a2)
+	subu $t7, $t9, $t7
+	subu $t6, $t8, $t6
+	subu $t5, $t8, $s0
+	mul $t7, $t7, $t5
+	div $t7, $t7, $t6
+	# TODO: better division
+	subu $t7, $t9, $t7
+	move $s3, $t7
+	#right
+	lw $t7, 24($a2)
+	lw $t6, 28($a2)
+	subu $t7, $t9, $t7
+	subu $t6, $t8, $t6
+	mul $t7, $t7, $t5
+	div $t7, $t7, $t6
+	subu $t7, $t9, $t7
+	move $s5, $t7
+
 	# calculate memory offset of the last column in the row
-	move $s5, $s1
-    addiu $s5, $s5, 3
-    andi $s5, -4
-	mulu $s5, $s5, $t0 # multiply padded image width by current row number
-	addu $s5, $s5, $t1 # add last column offset
-	sll $t9, $s5, 1    #
-	addu $s5, $t9, $s5 # multiply by 3 (bytes per pixels)
+	calc_offset:
+	lw $s2, 4($a0)
+    addiu $s2, $s2, 3
+    andi $s2, -4
+	mulu $s2, $s2, $s0 # multiply padded image width by current row number
+	addu $s2, $s2, $s1 # add last column offset
+	sll $t9, $s2, 1    #
+	addu $s2, $t9, $s2 # multiply by 3 (bytes per pixels)
 
 	column_loop:
-	bltz $t1, row_loop_end
+	bltz $s1, row_loop_end
 	
 	# calculate color
-	move $t6, $s4
+	
+	move $t0, $s7
 
 	# add offset to image address
-	addu $t9, $s2, $s5
+	store_pixel:
+	addu $t9, $a1, $s2
 
-	sb $t6, ($t9)
-	srl $t6, $t6, 8
-	sb $t6, 1($t9)
-	srl $t6, $t6, 8
-	sb $t6, 2($t9)
+	sb $t0, ($t9)
+	srl $t0, $t0, 8
+	sb $t0, 1($t9)
+	srl $t0, $t0, 8
+	sb $t0, 2($t9)
 	
-	subiu $s5, $s5, 3
-	subiu $t1, $t1, 1
+	subiu $s2, $s2, 3
+	subiu $s1, $s1, 1
 	j column_loop
 	
 	row_loop_end:
-	subiu $t0, $t0, 1
+	subiu $s0, $s0, 1
 	j row_loop
 	
 	draw_end:
