@@ -1,5 +1,15 @@
-.eqv BITMAP_WIDTH 256
-.eqv BITMAP_HEIGHT 256
+.eqv BITMAP_WIDTH 32
+.eqv BITMAP_HEIGHT 32
+.eqv VERTEX1_X 16
+.eqv VERTEX1_Y 2
+.eqv VERTEX1_BGR 0x00ff0000
+.eqv VERTEX2_X 2
+.eqv VERTEX2_Y 30
+.eqv VERTEX2_BGR 0x0000ff00
+.eqv VERTEX3_X 30
+.eqv VERTEX3_Y 30
+.eqv VERTEX3_BGR 0x000000ff
+.eqv BKG_COLOR 0x0030d5c8
 
 .data
 	.half -1 # padding (for word-aligning bitmap header)
@@ -28,29 +38,23 @@
 	
 	vertex_data:
 	# vertex1
-	.word 128 # (+0x00) x
-	.word 10  # (+0x04) y
-	.byte 0   # (+0x08) b
-	.byte 0   # (+0x09) g
-	.byte 255 # (+0x0a) r
+	.word VERTEX1_X   # (+0x00) x
+	.word VERTEX1_Y   # (+0x04) y
+	.word VERTEX1_BGR # (+0x08) b
+	                  # (+0x09) g
+	                  # (+0x0a) r
 	# vertex2
-	.word 10  # (+0x0c) x
-	.word 240 # (+0x10) y
-	.byte 0   # (+0x14) b
-	.byte 255 # (+0x15) g
-	.byte 0   # (+0x16) r
+	.word VERTEX2_X   # (+0x0c) x
+	.word VERTEX2_Y   # (+0x10) y
+	.word VERTEX2_BGR # (+0x14) b
+	                  # (+0x15) g
+	                  # (+0x16) r
 	# vertex3
-	.word 245 # (+0x18) x
-	.word 230 # (+0x1c) y
-	.byte 255 # (+0x20) b
-	.byte 0   # (+0x21) g
-	.byte 0   # (+0x22) r
-
-	bkg_color:
-	.align 2
-	.byte 0   # b
-	.byte 255 # g
-	.byte 255 # r
+	.word VERTEX3_X   # (+0x18) x
+	.word VERTEX3_Y   # (+0x1c) y
+	.word VERTEX3_BGR # (+0x20) b
+	                  # (+0x21) g
+	                  # (+0x22) r
 
 .text
 main:
@@ -70,7 +74,7 @@ main:
 	move $a0, $s0
 	move $a1, $s1
 	move $a2, $s2
-#	jal draw_triangle
+	jal draw_triangle
 	
 	# [save to file]
 	write_file:
@@ -206,54 +210,77 @@ rearrange_vertices:
 	# $a0 - pointer to bitmap details (BITMAPINFOHEADER)
 	# $a1 - pointer to bitmap data
 	# $a2 - pointer to vertices data
-draw_triangle:	
+draw_triangle:
+	# prologue
+	subiu $sp, $sp, 32
+	sw $s0, ($sp)
+	sw $s1, 4($sp)
+	sw $s2, 8($sp)
+	sw $s3, 12($sp)
+	sw $s4, 16($sp)
+	sw $s5, 20($sp)
+	sw $s6, 24($sp)
+	sw $s7, 28($sp)
+	
 	# place useful data in registers
-	# s0 - left side X position
-	# s1 - left side color
-	# s2 - right side X position
-	# s3 - right side color
-	# s4 - background color
-#	lw $s4, bkg_color
-	# s5 - memory row base
+	# $s0 - pointer to bitmap header
+	move $s0, $a0
+	# $s1 - bitmap width
+	lw $s1, 4($s0)
+	# $s2 - pointer to bitmap data
+	move $s2, $a1
+	# $s3 - pointer to vertices data
+	move $s3, $a2
+	# $s4 - background color
+	li $s4, BKG_COLOR
+	# $s5 - memory offset
+	
+	# $t0 - row counter
+	lw $t0, 8($s0)
+	subiu $t0, $t0, 1
+	# $t1 - column counter
+	# $t2 - left side X position
+	# $t3 - left side color
+	# $t4 - right side X position
+	# $t5 - right side color
+	# $t6 - fill color
 	
 	# initialize the loop
-	# t0 - row counter
-#	lw $t0, biHeight
-	subiu $t0, $t0, 1
-	# t1 - column counter
-	# t2 - ?
-	# t3 - fill color
-	move $t3, $zero
+	# $t0 - row counter (already initialized)
+	# $t1 - column counter
+	# $t6 - fill color
 		
 	row_loop:
-	bltz $t0, write_file
-#	lw $t1, biWidth
+	bltz $t0, draw_end
+	move $t1, $s1
 	subiu $t1, $t1, 1
 	# calculate left and right side
 		
-	# calculate row memory offset
-#	lw $s5, biHeight
-	subiu $s5, $s5, 1
-	subu $s5, $s5, $t0
-	sll $s5, $s5, 8 # multiply by 256
-	move $t9, $s5
-	sll $s5, $s5, 1
-	addu $s5, $s5, $t9 # multiply by 3 (bytes per pixel)
-		
+	# calculate memory offset of the last column in the row
+	move $s5, $s1
+    addiu $s5, $s5, 3
+    andi $s5, -4
+	mulu $s5, $s5, $t0 # multiply padded image width by current row number
+	addu $s5, $s5, $t1 # add last column offset
+	sll $t9, $s5, 1    #
+	addu $s5, $t9, $s5 # multiply by 3 (bytes per pixels)
+
 	column_loop:
 	bltz $t1, row_loop_end
-	move $t3, $s4
-	# calculate row + column memory offset
-	move $t9, $s5
-	sll $t8, $t1, 1
-	addu $t8, $t8, $t1 # multiply by 3 (bytes per pixel)
-	addu $t9, $t9, $t8
-		
-#	sb $t3, image_data($t9)
-	srl $t3, $t3, 8
-#	sb $t3, image_data+1($t9)
-	srl $t3, $t3, 8
-#	sb $t3, image_data+2($t9)
+	
+	# calculate color
+	move $t6, $s4
+
+	# add offset to image address
+	addu $t9, $s2, $s5
+
+	sb $t6, ($t9)
+	srl $t6, $t6, 8
+	sb $t6, 1($t9)
+	srl $t6, $t6, 8
+	sb $t6, 2($t9)
+	
+	subiu $s5, $s5, 3
 	subiu $t1, $t1, 1
 	j column_loop
 	
@@ -262,4 +289,14 @@ draw_triangle:
 	j row_loop
 	
 	draw_end:
+	# epilogue
+	lw $s7, 28($sp)
+	lw $s6, 24($sp)
+	lw $s5, 20($sp)
+	lw $s4, 16($sp)
+	lw $s3, 12($sp)
+	lw $s2, 8($sp)
+	lw $s1, 4($sp)
+	lw $s0, ($sp)
+	addiu $sp, $sp, 32
 	jr $ra
