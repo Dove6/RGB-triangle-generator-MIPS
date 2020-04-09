@@ -1,15 +1,16 @@
 .eqv BITMAP_WIDTH 32
 .eqv BITMAP_HEIGHT 32
-.eqv VERTEX1_X 1
-.eqv VERTEX1_Y 1
+.eqv VERTEX1_X 16
+.eqv VERTEX1_Y 2
 .eqv VERTEX1_BGR 0x00ff0000
-.eqv VERTEX2_X 3
-.eqv VERTEX2_Y 20
+.eqv VERTEX2_X 30
+.eqv VERTEX2_Y 30
 .eqv VERTEX2_BGR 0x0000ff00
-.eqv VERTEX3_X 10
+.eqv VERTEX3_X 2
 .eqv VERTEX3_Y 30
 .eqv VERTEX3_BGR 0x000000ff
-.eqv BKG_COLOR 0x0030d5c8
+#.eqv BKG_COLOR 0x0030d5c8
+.eqv BKG_COLOR 0x00ffffff
 
 .data
 	.half -1 # padding (for word-aligning bitmap header)
@@ -68,7 +69,7 @@ main:
 	la $s2, vertex_data
 	# [rearrange vertices]
 	move $a0, $s2
-	jal rearrange_vertices
+	#jal rearrange_vertices
 
 	# [process bitmap]
 	move $a0, $s0
@@ -299,14 +300,14 @@ draw_triangle:
 	
 	# calculate barycentric equation line summands
 	# (X3 - X2)(Yp - Y3)
-	lw $t9, 28($a0) # Y3
-	lw $t8, 24($a0) # X3
-	lw $t7, 12($a0) # X2
+	lw $t9, 28($a2) # Y3
+	lw $t8, 24($a2) # X3
+	lw $t7, 12($a2) # X2
 	subu $t7, $t8, $t7
 	subu $t9, $s0, $t9
 	mul $s4, $t7, $t9 # save in $s4
 	# (X1 - X3)(Yp - Y3)
-	lw $t7, ($a0) # X1
+	lw $t7, ($a2) # X1
 	subu $t7, $t7, $t8
 	mul $s5, $t7, $t9 # save in $s5
 
@@ -323,13 +324,88 @@ draw_triangle:
 	column_loop:
 	bltz $s1, row_loop_end
 	
-    # calculate color
-	# color = background
+    # color = background
 	move $t0, $s6
 	
 	# check barymetric weights
-	# W1 = [(Y2 - Y3)(Xp - X3) + (X3 - X2)(Yp - Y3)]/[(Y2 - Y3)(X1 - X3)+(X3 - X2)(Y1 - Y3)]
-	# W2 = [(Y3 - Y1)(Xp - X3) + (X1 - X3)(Yp - Y3)]/[(Y2 - Y3)(X1 - X3)+(X3 - X2)(Y1 - Y3)]
+	# W1 = 100*[(Y2 - Y3)(Xp - X3) + (X3 - X2)(Yp - Y3)]/[(Y2 - Y3)(X1 - X3)+(X3 - X2)(Y1 - Y3)]
+	lw $t9, 48($sp) # Y2 - Y3
+	lw $t8, 24($a2) # X3
+	subu $t8, $s1, $t8
+	mul $t9, $t9, $t8
+	addu $t9, $t9, $s4
+	sll $t7, $t9, 5    #
+	sll $t6, $t9, 6    #
+	sll $t9, $t9, 2    #
+	addu $t9, $t6, $t9 #
+	addu $t9, $t9, $t6 # multiply by 100
+	div $t9, $t9, $s3
+	bltz $t9, store_pixel
+	# W2 = 100*[(Y3 - Y1)(Xp - X3) + (X1 - X3)(Yp - Y3)]/[(Y2 - Y3)(X1 - X3)+(X3 - X2)(Y1 - Y3)]
+	lw $t7, 52($sp) # Y3 - Y1
+	mul $t8, $t8, $t7
+	addu $t8, $t8, $s5
+	sll $t7, $t8, 5    #
+	sll $t6, $t8, 6    #
+	sll $t8, $t8, 2    #
+	addu $t8, $t6, $t8 #
+	addu $t8, $t8, $t6 # multiply by 100
+	div $t8, $t8, $s3
+	bltz $t8, store_pixel
+	# W3 = 100 - W1 - W2
+	subu $t7, $zero, $t9
+	addu $t7, $t7, 100
+	subu $t7, $t7, $t8
+	bltz $t7, store_pixel
+	
+	# calculate color
+	move $t0, $zero
+	lw $t6, 8($a2)  # C1
+	lw $t5, 20($a2) # C2
+	lw $t4, 32($a2) # C3
+	# red
+	srl $t3, $t6, 16 # R1
+	andi $t3, 0xff
+	mul $t3, $t3, $t9
+	srl $t2, $t5, 16 # R2
+	andi $t2, 0xff
+	mul $t2, $t2, $t8
+	addu $t3, $t3, $t2
+	srl $t2, $t5, 16 # R3
+	andi $t2, 0xff
+	mul $t2, $t2, $t7
+	addu $t3, $t3, $t2
+	div $t3, $t3, 100
+	andi $t3, 0xff
+	srl $t0, $t3, 16
+	# green
+	srl $t3, $t6, 8 # G1
+	andi $t3, 0xff
+	mul $t3, $t3, $t9
+	srl $t2, $t5, 8 # G2
+	andi $t2, 0xff
+	mul $t2, $t2, $t8
+	addu $t3, $t3, $t2
+	srl $t2, $t5, 8 # G3
+	andi $t2, 0xff
+	mul $t2, $t2, $t7
+	addu $t3, $t3, $t2
+	div $t3, $t3, 100
+	andi $t3, 0xff
+	srl $t3, $t3, 8
+	or $t0, $t0, $t3
+	# blue
+	andi $t6, 0xff # B1
+	mul $t6, $t6, $t9
+	andi $t5, 0xff # B2
+	mul $t5, $t5, $t8
+	addu $t6, $t6, $t5
+	andi $t4, 0xff # B3
+	mul $t4, $t4, $t7
+	addu $t6, $t6, $t4
+	div $t6, $t6, 100
+	andi $t6, 0xff
+	or $t0, $t0, $t6
 
 	# add offset to image address
 	store_pixel:
