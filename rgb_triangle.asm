@@ -377,7 +377,7 @@ draw_triangle:
 	addu $t3, $t3, $t2
 	div $t3, $t3, 100
 	andi $t3, 0xff
-	srl $t0, $t3, 16
+	sll $t0, $t3, 16
 	# green
 	srl $t3, $t6, 8 # G1
 	andi $t3, 0xff
@@ -392,7 +392,7 @@ draw_triangle:
 	addu $t3, $t3, $t2
 	div $t3, $t3, 100
 	andi $t3, 0xff
-	srl $t3, $t3, 8
+	sll $t3, $t3, 8
 	or $t0, $t0, $t3
 	# blue
 	andi $t6, 0xff # B1
