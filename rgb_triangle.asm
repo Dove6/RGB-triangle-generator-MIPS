@@ -271,8 +271,8 @@ draw_triangle:
 	lw $s1, 4($a0)
 	subiu $s1, $s1, 1
 	
-	move $s3, $zero
-	move $s5, $zero
+	subiu $s3, $zero, 1
+	subiu $s5, $zero, 1
 	# check if Ymin <= Y <= Ymax
 	lw $t8, 32($sp)
 	lw $t9, 36($sp)
@@ -322,9 +322,21 @@ draw_triangle:
 	column_loop:
 	bltz $s1, row_loop_end
 	
-	# calculate color
-	
+	# color = background
 	move $t0, $s7
+	# check if Xmin <= X <= Xmax
+	move $t8, $s3
+	move $t9, $s5
+	subu $t8, $s1, $t8
+	subu $t9, $s1, $t9
+	mul $t8, $t8, $t9
+	mfhi $t9
+	slti $t9, $t9, 0
+	seq $t8, $t8, 0
+	or $t9, $t8, $t9
+	beqz $t9, store_pixel # $t9 == 0 (positive product, not in range)
+	# calculate color (not background)
+	move $t0, $zero
 
 	# add offset to image address
 	store_pixel:
