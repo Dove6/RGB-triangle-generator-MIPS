@@ -1,12 +1,12 @@
 .eqv BITMAP_WIDTH 32
 .eqv BITMAP_HEIGHT 32
-.eqv VERTEX1_X 16
-.eqv VERTEX1_Y 2
+.eqv VERTEX1_X 1
+.eqv VERTEX1_Y 1
 .eqv VERTEX1_BGR 0x00ff0000
-.eqv VERTEX2_X 2
-.eqv VERTEX2_Y 30
+.eqv VERTEX2_X 3
+.eqv VERTEX2_Y 20
 .eqv VERTEX2_BGR 0x0000ff00
-.eqv VERTEX3_X 30
+.eqv VERTEX3_X 10
 .eqv VERTEX3_Y 30
 .eqv VERTEX3_BGR 0x000000ff
 .eqv BKG_COLOR 0x0030d5c8
@@ -223,19 +223,22 @@ draw_triangle:
 	sw $s7, 28($sp)
 	
 	# stack layout
-	# (+0x24) vertex max Y
-	# (+0x20) vertex min Y
+	# (+0x34) helper barycentric equation factor for the second vertex
+	# (+0x30) helper barycentric equation factor for the first vertex
+	# (+0x2c) vertex max Y
+	# (+0x28) vertex min Y
+	# (+0x24) vertex max X
+	# (+0x20) vertex min X
 	# (+0x00) saved registers (8 * 4 bytes)
 	
 	# saved registers layout
 	# $s0 - row counter
 	# $s1 - column counter
 	# $s2 - pixel memory offset
-	# $s3 - left side X position
-	# $s4 - left side color
-	# $s5 - right side X position
-	# $s6 - right side color
-	# $s7 - background color
+    # $s3 - barycentric equations denominator
+    # $s4 - barycentric equation line constant summand for the first vertex
+    # $s5 - barycentric equation line constant summand for the second vertex
+    # $s6 - background color
 
 	# temporary registers layout
 	# $t0 - current color
@@ -243,9 +246,32 @@ draw_triangle:
 	
 	lw $s0, 8($a0)
 	subiu $s0, $s0, 1
-	li $s7, BKG_COLOR
+	# calculate background color
+	li $s6, BKG_COLOR
 
-
+	# calculate barycentric denominator
+	# (Y2 - Y3)(X1 - X3)+(X3 - X2)(Y1 - Y3)
+	lw $t9, 28($a2) # Y3
+	lw $t8, 24($a2) # X3
+	lw $t7, 16($a2) # Y2
+	lw $t6, 12($a2) # X2
+	lw $t5, 4($a2)  # Y1
+	lw $t4, ($a2)   # X1
+	subu $t7, $t7, $t9
+	subu $t6, $t8, $t6
+	subu $t5, $t5, $t9
+	subu $t4, $t4, $t8
+	mul $t7, $t7, $t4
+	mul $t6, $t6, $t5
+	addu $s3, $t7, $t6 # save result in $s3
+	
+	#calculate barycentric helper factors
+	lw $t8, 16($a2) # Y2
+	lw $t7, 4($a2)  # Y1
+	subu $t8, $t8, $t9
+	subu $t7, $t9, $t7
+	sw $t8, 48($sp)
+	sw $t7, 52($sp)
 
 	# calculate min and max vertex Y
 	lw $t7, 4($a2)
@@ -261,8 +287,8 @@ draw_triangle:
 	movn $t9, $t7, $t6
 	sltu $t6, $t7, $t8
 	movn $t8, $t7, $t6
-	sw $t8, 32($sp)
-	sw $t9, 36($sp)
+	sw $t8, 40($sp)
+	sw $t9, 44($sp)
 	
 	# initialize the loop
 		
@@ -271,43 +297,18 @@ draw_triangle:
 	lw $s1, 4($a0)
 	subiu $s1, $s1, 1
 	
-	subiu $s3, $zero, 1
-	subiu $s5, $zero, 1
-	# check if Ymin <= Y <= Ymax
-	lw $t8, 32($sp)
-	lw $t9, 36($sp)
-	subu $t8, $s0, $t8
+	# calculate barycentric equation line summands
+	# (X3 - X2)(Yp - Y3)
+	lw $t9, 28($a0) # Y3
+	lw $t8, 24($a0) # X3
+	lw $t7, 12($a0) # X2
+	subu $t7, $t8, $t7
 	subu $t9, $s0, $t9
-	mul $t8, $t8, $t9
-	mfhi $t9
-	slti $t9, $t9, 0
-	seq $t8, $t8, 0
-	or $t9, $t8, $t9
-	beqz $t9, calc_offset # $t9 == 0 (positive product, not in range)
-	
-	# calculate left and right side
-	#left
-	lw $t9, ($a2)
-	lw $t8, 4($a2)
-	lw $t7, 12($a2)
-	lw $t6, 16($a2)
-	subu $t7, $t9, $t7
-	subu $t6, $t8, $t6
-	subu $t5, $t8, $s0
-	mul $t7, $t7, $t5
-	div $t7, $t7, $t6
-	# TODO: better division
-	subu $t7, $t9, $t7
-	move $s3, $t7
-	#right
-	lw $t7, 24($a2)
-	lw $t6, 28($a2)
-	subu $t7, $t9, $t7
-	subu $t6, $t8, $t6
-	mul $t7, $t7, $t5
-	div $t7, $t7, $t6
-	subu $t7, $t9, $t7
-	move $s5, $t7
+	mul $s4, $t7, $t9 # save in $s4
+	# (X1 - X3)(Yp - Y3)
+	lw $t7, ($a0) # X1
+	subu $t7, $t7, $t8
+	mul $s5, $t7, $t9 # save in $s5
 
 	# calculate memory offset of the last column in the row
 	calc_offset:
@@ -322,21 +323,13 @@ draw_triangle:
 	column_loop:
 	bltz $s1, row_loop_end
 	
+    # calculate color
 	# color = background
-	move $t0, $s7
-	# check if Xmin <= X <= Xmax
-	move $t8, $s3
-	move $t9, $s5
-	subu $t8, $s1, $t8
-	subu $t9, $s1, $t9
-	mul $t8, $t8, $t9
-	mfhi $t9
-	slti $t9, $t9, 0
-	seq $t8, $t8, 0
-	or $t9, $t8, $t9
-	beqz $t9, store_pixel # $t9 == 0 (positive product, not in range)
-	# calculate color (not background)
-	move $t0, $zero
+	move $t0, $s6
+	
+	# check barymetric weights
+	# W1 = [(Y2 - Y3)(Xp - X3) + (X3 - X2)(Yp - Y3)]/[(Y2 - Y3)(X1 - X3)+(X3 - X2)(Y1 - Y3)]
+	# W2 = [(Y3 - Y1)(Xp - X3) + (X1 - X3)(Yp - Y3)]/[(Y2 - Y3)(X1 - X3)+(X3 - X2)(Y1 - Y3)]
 
 	# add offset to image address
 	store_pixel:
