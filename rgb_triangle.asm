@@ -3,13 +3,13 @@
 .eqv BITMAP_HEIGHT 256
 .eqv VERTEX1_X 128
 .eqv VERTEX1_Y 10
-.eqv VERTEX1_BGR 0x00ff0000
+.eqv VERTEX1_BGR 0x00ffffff
 .eqv VERTEX2_X 10
 .eqv VERTEX2_Y 240
-.eqv VERTEX2_BGR 0x0000ff00
+.eqv VERTEX2_BGR 0x001c35a3
 .eqv VERTEX3_X 245
 .eqv VERTEX3_Y 230
-.eqv VERTEX3_BGR 0x000000ff
+.eqv VERTEX3_BGR 0x00f5f7fe
 
 # test 32x32 setup
 #.eqv BITMAP_WIDTH 32
@@ -290,9 +290,25 @@ draw_triangle:
 	lw $s0, 8($a0)
 	subiu $s0, $s0, 1
 	# calculate background color
-	li $s6, BKG_COLOR
+	li $s6, 0x00ffffff
+	lw $t9, 32($a2)
+	lw $t8, 20($a2)
+	lw $t7, 8($a2)
+	li $t6, 0x00f0f0f0
+	and $t5, $t9, $t6
+	seq $t5, $t5, $t6
+	move $t3, $t5 # first white
+	and $t5, $t8, $t6
+	seq $t5, $t5, $t6
+	addu $t3, $t3, $t5 # second white
+	and $t5, $t7, $t6
+	seq $t5, $t5, $t6
+	addu $t3, $t3, $t5 # third white
+	blt $t3, 2, calc_denominator
+	li $s6, 0x00000000
 
 	# calculate barycentric denominator
+	calc_denominator:
 	# (Y2 - Y3)(X1 - X3)+(X3 - X2)(Y1 - Y3)
 	lw $t9, 28($a2) # Y3
 	lw $t8, 24($a2) # X3
