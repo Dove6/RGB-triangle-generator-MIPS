@@ -1,13 +1,13 @@
-.eqv BITMAP_WIDTH 128
-.eqv BITMAP_HEIGHT 128
-.eqv VERTEX1_X 64
-.eqv VERTEX1_Y 4
+.eqv BITMAP_WIDTH 256
+.eqv BITMAP_HEIGHT 256
+.eqv VERTEX1_X 128
+.eqv VERTEX1_Y 10
 .eqv VERTEX1_BGR 0x00ff0000
-.eqv VERTEX2_X 2
-.eqv VERTEX2_Y 125
+.eqv VERTEX2_X 10
+.eqv VERTEX2_Y 240
 .eqv VERTEX2_BGR 0x0000ff00
-.eqv VERTEX3_X 110
-.eqv VERTEX3_Y 120
+.eqv VERTEX3_X 245
+.eqv VERTEX3_Y 230
 .eqv VERTEX3_BGR 0x000000ff
 #.eqv BKG_COLOR 0x0030d5c8
 .eqv BKG_COLOR 0x00ffffff
@@ -343,130 +343,94 @@ draw_triangle:
 	subu $t8, $s1, $t8
 	mul $t9, $t9, $t8
 	addu $t9, $t9, $s4
-#	sll $t7, $t9, 5    #
-#	sll $t6, $t9, 6    #
-#	sll $t9, $t9, 2    #
-#	addu $t9, $t6, $t9 #
-#	addu $t9, $t9, $t7 # multiply by 100
-	mtc1 $t9, $f2
+	mtc1 $t9, $f2 # $f2 = W1
 	cvt.s.w $f2, $f2
-#	div $t9, $t9, $s3
 	div.s $f2, $f2, $f1
-#	bltz $t9, store_pixel
 	c.lt.s $f2, $f0
 	bc1t store_pixel
 	# W2 = 100*[(Y3 - Y1)(Xp - X3) + (X1 - X3)(Yp - Y3)]/[(Y2 - Y3)(X1 - X3)+(X3 - X2)(Y1 - Y3)]
 	lw $t7, 52($sp) # Y3 - Y1
 	mul $t8, $t8, $t7
 	addu $t8, $t8, $s5
-#	sll $t7, $t8, 5    #
-#	sll $t6, $t8, 6    #
-#	sll $t8, $t8, 2    #
-#	addu $t8, $t6, $t8 #
-#	addu $t8, $t8, $t7 # multiply by 100
-	mtc1 $t8, $f3
+	mtc1 $t8, $f3 # $f3 = W2
 	cvt.s.w $f3, $f3
-#	div $t8, $t8, $s3
 	div.s $f3, $f3, $f1
-#	bltz $t8, store_pixel
 	c.lt.s $f3, $f0
 	bc1t store_pixel
 	# W3 = 100 - W1 - W2
-#	subu $t7, $zero, $t9
-#	addu $t7, $t7, 100
-#	subu $t7, $t7, $t8
-	li $t7, 100      #
+	li $t7, 1        #
 	mtc1 $t7, $f4    #
 	cvt.s.w $f4, $f4 # li.s $f4, 100.0
 	sub.s $f4, $f4, $f2
-	sub.s $f4, $f4, $f3
-#	bltz $t7, store_pixel
+	sub.s $f4, $f4, $f3 # $f4 = W3
 	c.lt.s $f4, $f0
 	bc1t store_pixel
 	
 	# calculate color
 	move $t0, $zero
-	lw $t6, 8($a2)  # C1
-	lw $t5, 20($a2) # C2
-	lw $t4, 32($a2) # C3
+	lw $t9, 8($a2)  # C1
+	lw $t8, 20($a2) # C2
+	lw $t7, 32($a2) # C3
 	# red
-	srl $t3, $t6, 16 # R1
-	andi $t3, 0xff
-#	mul $t3, $t3, $t9
-	mtc1 $t3, $f5
-	cvt.s.w $f5, $f5
-	mul.s $f5, $f5, $f2
-	srl $t2, $t5, 16 # R2
-	andi $t2, 0xff
-#	mul $t2, $t2, $t8
-	mtc1 $t2, $f6
-	cvt.s.w $f6, $f6
-	mul.s $f6, $f6, $f2
-#	addu $t3, $t3, $t2
-	add.s $f5, $f5, $f6
-	srl $t2, $t5, 16 # R3
-	andi $t2, 0xff
-#	mul $t2, $t2, $t7
-	mtc1 $t2, $f6
-	cvt.s.w $f6, $f6
-	mul.s $f6, $f6, $f2
-#	addu $t3, $t3, $t2
-	add.s $f5, $f5, $f6
-#	div $t3, $t3, 100
-	round.w.s $f5, $f5
-	mfc1 $t3, $f5
-	andi $t3, 0xff
-	sll $t0, $t3, 16
-	# green
-	srl $t3, $t6, 8 # G1
-	andi $t3, 0xff
-#	mul $t3, $t3, $t9
-	mtc1 $t3, $f5
-	cvt.s.w $f5, $f5
-	mul.s $f5, $f5, $f3
-	srl $t2, $t5, 8 # G2
-	andi $t2, 0xff
-#	mul $t2, $t2, $t8
-	mtc1 $t2, $f6
-	cvt.s.w $f6, $f6
-	mul.s $f6, $f6, $f3
-#	addu $t3, $t3, $t2
-	add.s $f5, $f5, $f6
-	srl $t2, $t5, 8 # G3
-	andi $t2, 0xff
-#	mul $t2, $t2, $t7
-	mtc1 $t2, $f6
-	cvt.s.w $f6, $f6
-	mul.s $f6, $f6, $f3
-#	addu $t3, $t3, $t2
-	add.s $f5, $f5, $f6
-#	div $t3, $t3, 100
-	round.w.s $f5, $f5
-	mfc1 $t3, $f5
-	andi $t3, 0xff
-	sll $t3, $t3, 8
-	or $t0, $t0, $t3
-	# blue
-	andi $t6, 0xff # B1
-#	mul $t6, $t6, $t9
+	srl $t6, $t9, 16 # R1
+	andi $t6, 0xff
 	mtc1 $t6, $f5
 	cvt.s.w $f5, $f5
+	mul.s $f5, $f5, $f2
+	srl $t6, $t8, 16 # R2
+	andi $t6, 0xff
+	mtc1 $t6, $f6
+	cvt.s.w $f6, $f6
+	mul.s $f6, $f6, $f2
+	add.s $f5, $f5, $f6
+	srl $t6, $t7, 16 # R3
+	andi $t6, 0xff
+	mtc1 $t6, $f6
+	cvt.s.w $f6, $f6
+	mul.s $f6, $f6, $f2
+	add.s $f5, $f5, $f6
+	round.w.s $f5, $f5
+	mfc1 $t6, $f5
+	andi $t6, 0xff
+	sll $t0, $t6, 16
+	# green
+	srl $t6, $t9, 8 # G1
+	andi $t6, 0xff
+	mtc1 $t6, $f5
+	cvt.s.w $f5, $f5
+	mul.s $f5, $f5, $f3
+	srl $t6, $t8, 8 # G2
+	andi $t6, 0xff
+	mtc1 $t6, $f6
+	cvt.s.w $f6, $f6
+	mul.s $f6, $f6, $f3
+	add.s $f5, $f5, $f6
+	srl $t6, $t7, 8 # G3
+	andi $t6, 0xff
+	mtc1 $t6, $f6
+	cvt.s.w $f6, $f6
+	mul.s $f6, $f6, $f3
+	add.s $f5, $f5, $f6
+	round.w.s $f5, $f5
+	mfc1 $t6, $f5
+	andi $t6, 0xff
+	sll $t6, $t6, 8
+	or $t0, $t0, $t6
+	# blue
+	andi $t9, 0xff # B1
+	mtc1 $t9, $f5
+	cvt.s.w $f5, $f5
 	mul.s $f5, $f5, $f4
-	andi $t5, 0xff # B2
-#	mul $t5, $t5, $t8
-	mtc1 $t5, $f6
+	andi $t8, 0xff # B2
+	mtc1 $t8, $f6
 	cvt.s.w $f6, $f6
 	mul.s $f6, $f6, $f4
-#	addu $t6, $t6, $t5
 	add.s $f5, $f5, $f6
-	andi $t4, 0xff # B3
-#	mul $t4, $t4, $t7
-	mtc1 $t4, $f6
+	andi $t7, 0xff # B3
+	mtc1 $t7, $f6
 	cvt.s.w $f6, $f6
 	mul.s $f6, $f6, $f4
-#	addu $t6, $t6, $t4
 	add.s $f5, $f5, $f6
-#	div $t6, $t6, 100
 	round.w.s $f5, $f5
 	mfc1 $t6, $f5
 	andi $t6, 0xff
