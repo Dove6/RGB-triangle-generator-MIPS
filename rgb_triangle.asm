@@ -338,7 +338,7 @@ draw_triangle:
 	sll $t6, $t9, 6    #
 	sll $t9, $t9, 2    #
 	addu $t9, $t6, $t9 #
-	addu $t9, $t9, $t6 # multiply by 100
+	addu $t9, $t9, $t7 # multiply by 100
 	div $t9, $t9, $s3
 	bltz $t9, store_pixel
 	# W2 = 100*[(Y3 - Y1)(Xp - X3) + (X1 - X3)(Yp - Y3)]/[(Y2 - Y3)(X1 - X3)+(X3 - X2)(Y1 - Y3)]
@@ -349,7 +349,7 @@ draw_triangle:
 	sll $t6, $t8, 6    #
 	sll $t8, $t8, 2    #
 	addu $t8, $t6, $t8 #
-	addu $t8, $t8, $t6 # multiply by 100
+	addu $t8, $t8, $t7 # multiply by 100
 	div $t8, $t8, $s3
 	bltz $t8, store_pixel
 	# W3 = 100 - W1 - W2
