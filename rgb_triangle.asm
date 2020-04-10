@@ -1,3 +1,4 @@
+# test 256x256 setup
 .eqv BITMAP_WIDTH 256
 .eqv BITMAP_HEIGHT 256
 .eqv VERTEX1_X 128
@@ -9,6 +10,20 @@
 .eqv VERTEX3_X 245
 .eqv VERTEX3_Y 230
 .eqv VERTEX3_BGR 0x000000ff
+
+# test 32x32 setup
+#.eqv BITMAP_WIDTH 32
+#.eqv BITMAP_HEIGHT 32
+#.eqv VERTEX1_X 16
+#.eqv VERTEX1_Y 2
+#.eqv VERTEX1_BGR 0x00ff0000
+#.eqv VERTEX2_X 2
+#.eqv VERTEX2_Y 30
+#.eqv VERTEX2_BGR 0x0000ff00
+#.eqv VERTEX3_X 30
+#.eqv VERTEX3_Y 28
+#.eqv VERTEX3_BGR 0x000000ff
+
 #.eqv BKG_COLOR 0x0030d5c8
 .eqv BKG_COLOR 0x00ffffff
 
@@ -36,7 +51,7 @@
 
 	output_filename:
 	.asciiz "result.bmp"
-	
+
 	vertex_data:
 	# vertex1
 	.word VERTEX1_X   # (+0x00) x
@@ -66,17 +81,13 @@ main:
 	move $s0, $v0
 	move $s1, $v1
 
-	la $s2, vertex_data
-	# [rearrange vertices]
-	move $a0, $s2
-	#jal rearrange_vertices
-
 	# [process bitmap]
 	move $a0, $s0
 	move $a1, $s1
+	la $s2, vertex_data
 	move $a2, $s2
 	jal draw_triangle
-	
+
 	# [save to file]
 	write_file:
 	# open output file
@@ -119,6 +130,76 @@ main:
 	syscall
 
 
+### MACROS ###
+
+	# assumptions:
+    #  only %regNumber2 and %regNumber3 values are preserved
+    #  no register may occur more than once in the argument list
+    .macro min_max_of_three(%regNumber1, %regNumber2, %regNumber3, %regResultMin, %regResultMax)
+    move %regResultMin, %regNumber1
+    move %regResultMax, %regNumber1
+   sgtu %regNumber1, %regNumber2, %regResultMax
+    movn %regResultMax, %regNumber2, %regNumber1
+    sltu %regNumber1, %regNumber2, %regResultMin
+    movn %regResultMin, %regNumber2, %regNumber1
+    sgtu %regNumber1, %regNumber3, %regResultMax
+    movn %regResultMax, %regNumber3, %regNumber1
+    sltu %regNumber1, %regNumber3, %regResultMin
+    movn %regResultMin, %regNumber3, %regNumber1
+    .end_macro
+
+    # assumptions:
+    #  %regValue may be %regResult
+    .macro pad_to_word (%regValue, %regResult)
+    addiu %regResult, %regValue, 3
+    andi %regResult, -4
+    .end_macro
+
+	# assumptions:
+    #  $f30 and $f31 are used for calculations internally, so they cannot be %fpRegMultiplier1,2,3
+    .macro blend_color(%regColor1, %regColor2, %regColor3, %shift, %fpRegMultiplier1, %fpRegMultiplier2, %fpRegMultiplier3, %regResult)
+    srl %regResult, %regColor1, %shift
+    andi %regResult, 0xff
+    mtc1 %regResult, $f31
+    cvt.s.w $f31, $f31
+    mul.s $f31, $f31, %fpRegMultiplier1
+    srl %regResult, %regColor2, %shift
+    andi %regResult, 0xff
+    mtc1 %regResult, $f30
+    cvt.s.w $f30, $f30
+    mul.s $f30, $f30, %fpRegMultiplier2
+    add.s $f31, $f31, $f30
+    srl %regResult, %regColor3, %shift
+    andi %regResult, 0xff
+    mtc1 %regResult, $f30
+    cvt.s.w $f30, $f30
+    mul.s $f30, $f30, %fpRegMultiplier3
+    add.s $f31, $f31, $f30
+    round.w.s $f31, $f31
+    mfc1 %regResult, $f31
+    andi %regResult, 0xff
+    .end_macro
+
+	# assumptions:
+    #  %regMin cannot be %regMax
+    #  %regChecked can be neither %regMin nor %regMax
+    #  %regResult may be %regMin or %regMax
+    #  only %regChecked value is preserved (if it is not %regResult)
+    # result:
+    #  1 if in range
+    #  0 if not in range
+    .macro check_if_in_range (%regMin, %regMax, %regChecked, %regResult)
+    subu %regMin, %regChecked, %regMin
+    subu %regMax, %regChecked, %regMax
+    mul %regMin, %regMin, %regMax
+    mfhi %regMax
+    slt %regMax, %regMax, $zero
+    seq %regMin, %regMin, $zero
+    or %regResult, %regMin, %regMax
+    .end_macro
+
+
+### FUNCTIONS ###
 	# parameters:
 	# $a0 - width
 	# $a1 - height
@@ -147,8 +228,7 @@ generate_bitmap:
 	sw $t1, 8($t3) # height
 	sll $t4, $t0, 1    #
 	addu $t4, $t4, $t0 # multiply width by 3
-	addiu $t4, $t4, 3 #
-	andi $t4, -4      # round up to nearest word
+	pad_to_word($t4, $t4)
 	mulu $t4, $t4, $t1
 	sw $t4, 20($t3) # pixel data size
 	# TODO: error on too large data
@@ -160,53 +240,8 @@ generate_bitmap:
 	move $v1, $v0
 	move $v0, $t3
 	jr $ra
-	
-	
-	# parameters:
-	# $a0 - pointer to data of three vertices
-rearrange_vertices:
-	move $t0, $a0
-	lw $t1, 4($t0)
-	lw $t2, 16($t0)
-	lw $t3, 28($t0)
-	bne $t1, $t2, second_check
-	lw $t4, ($t0)
-	lw $t5, 12($t0)
-	sw $t4, 12($t0)
-	sw $t5, ($t0)
-	lw $t4, 4($t0)
-	lw $t5, 16($t0)
-	sw $t4, 16($t0)
-	sw $t5, 4($t0)
-	lw $t4, 8($t0)
-	lw $t5, 20($t0)
-	sw $t4, 20($t0)
-	sw $t5, 8($t0)
-	j sanity_check
-	
-	second_check:
-	bne $t1, $t3, arranged
-	lw $t4, ($t0)
-	lw $t5, 24($t0)
-	sw $t4, 24($t0)
-	sw $t5, ($t0)
-	lw $t4, 4($t0)
-	lw $t5, 28($t0)
-	sw $t4, 28($t0)
-	sw $t5, 4($t0)
-	lw $t4, 8($t0)
-	lw $t5, 32($t0)
-	sw $t4, 32($t0)
-	sw $t5, 8($t0)
-	
-	sanity_check:
-	bne $t1, $t2, arranged
-	# error: not a triangle
-	
-	arranged:
-	jr $ra
-	
-	
+
+
 	# parameters:
 	# $a0 - pointer to bitmap details (BITMAPINFOHEADER)
 	# $a1 - pointer to bitmap data
@@ -222,7 +257,7 @@ draw_triangle:
 	sw $s5, 20($sp)
 	sw $s6, 24($sp)
 	sw $s7, 28($sp)
-	
+
 	# stack layout
 	# (+0x34) helper barycentric equation factor for the second vertex
 	# (+0x30) helper barycentric equation factor for the first vertex
@@ -231,12 +266,12 @@ draw_triangle:
 	# (+0x24) vertex max X
 	# (+0x20) vertex min X
 	# (+0x00) saved registers (8 * 4 bytes)
-	
+
 	# saved registers layout
 	# $s0 - row counter
 	# $s1 - column counter
 	# $s2 - pixel memory offset
-    # $s3 - barycentric equations denominator
+    #
     # $s4 - barycentric equation line constant summand for the first vertex
     # $s5 - barycentric equation line constant summand for the second vertex
     # $s6 - background color
@@ -244,14 +279,14 @@ draw_triangle:
 	# temporary registers layout
 	# $t0 - current color
 	# $t1-$t9 - temporary
-	
+
 	# floating-point registers layout
 	# $f0 - zero
 	# $f1 - barycentric equations denominator
 	# $f2-$f31 - temporary
-	
+
 	mtc1 $zero, $f0
-	
+
 	lw $s0, 8($a0)
 	subiu $s0, $s0, 1
 	# calculate background color
@@ -271,10 +306,10 @@ draw_triangle:
 	subu $t4, $t4, $t8
 	mul $t7, $t7, $t4
 	mul $t6, $t6, $t5
-	addu $s3, $t7, $t6 # save result in $s3
-	mtc1 $s3, $f1
+	addu $t7, $t7, $t6
+	mtc1 $t7, $f1 # save result in $f1
 	cvt.s.w $f1, $f1
-	
+
 	# calculate barycentric helper factors
 	lw $t8, 16($a2) # Y2
 	lw $t7, 4($a2)  # Y1
@@ -284,29 +319,20 @@ draw_triangle:
 	sw $t7, 52($sp)
 
 	# calculate min and max vertex Y
-	lw $t7, 4($a2)
-	move $t9, $t7 # max Y
-	move $t8, $t7 # min Y
-	lw $t7, 16($a2)
-	sgtu $t6, $t7, $t9
-	movn $t9, $t7, $t6
-	sltu $t6, $t7, $t8
-	movn $t8, $t7, $t6
+	lw $t9, 4($a2)
+	lw $t8, 16($a2)
 	lw $t7, 28($a2)
-	sgtu $t6, $t7, $t9
-	movn $t9, $t7, $t6
-	sltu $t6, $t7, $t8
-	movn $t8, $t7, $t6
-	sw $t8, 40($sp)
-	sw $t9, 44($sp)
-	
+	min_max_of_three($t9, $t8, $t7, $t6, $t5)
+	sw $t6, 40($sp)
+	sw $t5, 44($sp)
+
 	# initialize the loop
-		
+
 	row_loop:
 	bltz $s0, draw_end
 	lw $s1, 4($a0)
 	subiu $s1, $s1, 1
-	
+
 	# calculate barycentric equation line summands
 	# (X3 - X2)(Yp - Y3)
 	lw $t9, 28($a2) # Y3
@@ -323,8 +349,7 @@ draw_triangle:
 	# calculate memory offset of the last column in the row
 	calc_offset:
 	lw $s2, 4($a0)
-    addiu $s2, $s2, 3
-    andi $s2, -4
+	pad_to_word($s2, $s2)
 	mulu $s2, $s2, $s0 # multiply padded image width by current row number
 	addu $s2, $s2, $s1 # add last column offset
 	sll $t9, $s2, 1    #
@@ -332,10 +357,10 @@ draw_triangle:
 
 	column_loop:
 	bltz $s1, row_loop_end
-	
+
     # color = background
 	move $t0, $s6
-	
+
 	# check barymetric weights
 	# W1 = 100*[(Y2 - Y3)(Xp - X3) + (X3 - X2)(Yp - Y3)]/[(Y2 - Y3)(X1 - X3)+(X3 - X2)(Y1 - Y3)]
 	lw $t9, 48($sp) # Y2 - Y3
@@ -365,75 +390,21 @@ draw_triangle:
 	sub.s $f4, $f4, $f3 # $f4 = W3
 	c.lt.s $f4, $f0
 	bc1t store_pixel
-	
+
 	# calculate color
 	move $t0, $zero
 	lw $t9, 8($a2)  # C1
 	lw $t8, 20($a2) # C2
 	lw $t7, 32($a2) # C3
 	# red
-	srl $t6, $t9, 16 # R1
-	andi $t6, 0xff
-	mtc1 $t6, $f5
-	cvt.s.w $f5, $f5
-	mul.s $f5, $f5, $f2
-	srl $t6, $t8, 16 # R2
-	andi $t6, 0xff
-	mtc1 $t6, $f6
-	cvt.s.w $f6, $f6
-	mul.s $f6, $f6, $f2
-	add.s $f5, $f5, $f6
-	srl $t6, $t7, 16 # R3
-	andi $t6, 0xff
-	mtc1 $t6, $f6
-	cvt.s.w $f6, $f6
-	mul.s $f6, $f6, $f2
-	add.s $f5, $f5, $f6
-	round.w.s $f5, $f5
-	mfc1 $t6, $f5
-	andi $t6, 0xff
+	blend_color($t9, $t8, $t7, 16, $f2, $f3, $f4, $t6)
 	sll $t0, $t6, 16
 	# green
-	srl $t6, $t9, 8 # G1
-	andi $t6, 0xff
-	mtc1 $t6, $f5
-	cvt.s.w $f5, $f5
-	mul.s $f5, $f5, $f3
-	srl $t6, $t8, 8 # G2
-	andi $t6, 0xff
-	mtc1 $t6, $f6
-	cvt.s.w $f6, $f6
-	mul.s $f6, $f6, $f3
-	add.s $f5, $f5, $f6
-	srl $t6, $t7, 8 # G3
-	andi $t6, 0xff
-	mtc1 $t6, $f6
-	cvt.s.w $f6, $f6
-	mul.s $f6, $f6, $f3
-	add.s $f5, $f5, $f6
-	round.w.s $f5, $f5
-	mfc1 $t6, $f5
-	andi $t6, 0xff
+	blend_color($t9, $t8, $t7, 8, $f2, $f3, $f4, $t6)
 	sll $t6, $t6, 8
 	or $t0, $t0, $t6
 	# blue
-	andi $t9, 0xff # B1
-	mtc1 $t9, $f5
-	cvt.s.w $f5, $f5
-	mul.s $f5, $f5, $f4
-	andi $t8, 0xff # B2
-	mtc1 $t8, $f6
-	cvt.s.w $f6, $f6
-	mul.s $f6, $f6, $f4
-	add.s $f5, $f5, $f6
-	andi $t7, 0xff # B3
-	mtc1 $t7, $f6
-	cvt.s.w $f6, $f6
-	mul.s $f6, $f6, $f4
-	add.s $f5, $f5, $f6
-	round.w.s $f5, $f5
-	mfc1 $t6, $f5
-	andi $t6, 0xff
+	blend_color($t9, $t8, $t7, 0, $f2, $f3, $f4, $t6)
 	or $t0, $t0, $t6
 
 	# add offset to image address
@@ -445,15 +416,15 @@ draw_triangle:
 	sb $t0, 1($t9)
 	srl $t0, $t0, 8
 	sb $t0, 2($t9)
-	
+
 	subiu $s2, $s2, 3
 	subiu $s1, $s1, 1
 	j column_loop
-	
+
 	row_loop_end:
 	subiu $s0, $s0, 1
 	j row_loop
-	
+
 	draw_end:
 	# epilogue
 	lw $s7, 28($sp)
