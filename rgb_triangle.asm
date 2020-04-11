@@ -2,14 +2,14 @@
 .eqv BITMAP_WIDTH 256
 .eqv BITMAP_HEIGHT 256
 .eqv VERTEX1_X 128
-.eqv VERTEX1_Y 10
-.eqv VERTEX1_BGR 0x00ffffff
-.eqv VERTEX2_X 10
-.eqv VERTEX2_Y 240
-.eqv VERTEX2_BGR 0x001c35a3
-.eqv VERTEX3_X 245
-.eqv VERTEX3_Y 230
-.eqv VERTEX3_BGR 0x00f5f7fe
+.eqv VERTEX1_Y 120
+.eqv VERTEX1_BGR 0x00ff0000
+.eqv VERTEX2_X 120
+.eqv VERTEX2_Y 135
+.eqv VERTEX2_BGR 0x0000ff00
+.eqv VERTEX3_X 133
+.eqv VERTEX3_Y 134
+.eqv VERTEX3_BGR 0x000000ff
 
 # test 32x32 setup
 #.eqv BITMAP_WIDTH 32
@@ -335,6 +335,14 @@ draw_triangle:
 	sw $t7, 52($sp)
 
 	# calculate min and max vertex Y
+	lw $t9, ($a2)
+	lw $t8, 12($a2)
+	lw $t7, 24($a2)
+	min_max_of_three($t9, $t8, $t7, $t6, $t5)
+	sw $t6, 32($sp)
+	sw $t5, 36($sp)
+
+	# calculate min and max vertex Y
 	lw $t9, 4($a2)
 	lw $t8, 16($a2)
 	lw $t7, 28($a2)
@@ -343,7 +351,6 @@ draw_triangle:
 	sw $t5, 44($sp)
 
 	# initialize the loop
-
 	row_loop:
 	bltz $s0, draw_end
 	lw $s1, 4($a0)
@@ -377,7 +384,18 @@ draw_triangle:
     # color = background
 	move $t0, $s6
 
-	# check barymetric weights
+	# check Y clipping rectangle
+	lw $t9, 40($sp)
+	lw $t8, 44($sp)
+	check_if_in_range($t9, $t8, $s0, $t9)
+	beqz $t9, store_pixel
+	# check X clipping rectangle
+	lw $t9, 32($sp)
+	lw $t8, 36($sp)
+	check_if_in_range($t9, $t8, $s1, $t9)
+	beqz $t9, store_pixel
+
+	# calculate barymetric weights
 	# W1 = 100*[(Y2 - Y3)(Xp - X3) + (X3 - X2)(Yp - Y3)]/[(Y2 - Y3)(X1 - X3)+(X3 - X2)(Y1 - Y3)]
 	lw $t9, 48($sp) # Y2 - Y3
 	lw $t8, 24($a2) # X3
