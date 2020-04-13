@@ -1,31 +1,14 @@
-# test 256x256 setup
-.eqv BITMAP_WIDTH 256
-.eqv BITMAP_HEIGHT 256
-.eqv VERTEX1_X 128
-.eqv VERTEX1_Y 120
+.eqv BITMAP_WIDTH 1200
+.eqv BITMAP_HEIGHT 1000
+.eqv VERTEX1_X 512
+.eqv VERTEX1_Y 20
 .eqv VERTEX1_BGR 0x00ff0000
-.eqv VERTEX2_X 120
-.eqv VERTEX2_Y 135
+.eqv VERTEX2_X 10
+.eqv VERTEX2_Y 990
 .eqv VERTEX2_BGR 0x0000ff00
-.eqv VERTEX3_X 133
-.eqv VERTEX3_Y 134
+.eqv VERTEX3_X 1014
+.eqv VERTEX3_Y 999
 .eqv VERTEX3_BGR 0x000000ff
-
-# test 32x32 setup
-#.eqv BITMAP_WIDTH 32
-#.eqv BITMAP_HEIGHT 32
-#.eqv VERTEX1_X 16
-#.eqv VERTEX1_Y 2
-#.eqv VERTEX1_BGR 0x00ff0000
-#.eqv VERTEX2_X 2
-#.eqv VERTEX2_Y 30
-#.eqv VERTEX2_BGR 0x0000ff00
-#.eqv VERTEX3_X 30
-#.eqv VERTEX3_Y 28
-#.eqv VERTEX3_BGR 0x000000ff
-
-#.eqv BKG_COLOR 0x0030d5c8
-.eqv BKG_COLOR 0x00ffffff
 
 .data
 	.half -1 # padding (for word-aligning bitmap header)
@@ -72,64 +55,24 @@
 	                  # (+0x21) g
 	                  # (+0x22) r
 
+	error_strings:
+	.align 3 # error message
+	.asciiz "An error has occured: "
+	.double 0, 0, 0, 0, 0 # padding to 64 bytes
+	.asciiz "Non-positive bitmap size."
+	.double 0, 0, 0, 0 # padding to 64 bytes
+	.asciiz "Vertex outside the bitmap."
+	.double 0, 0, 0, 0 # padding to 64 bytes
+	.asciiz "Specified shape is not a triangle."
+	.double 0, 0, 0 # padding to 64 bytes
+	.asciiz "Couldn't create the output file."
+	.double 0, 0, 0 # padding to 64 bytes
+	.asciiz "Error while writing to output file."
+	.double 0, 0, 0 # padding to 64 bytes
+	.asciiz "Unknown error."
+	.double 0, 0, 0, 0, 0, 0 # padding to 64 bytes
+
 .text
-main:
-	# [prepare bitmap header and data]
-	li $a0, BITMAP_WIDTH	
-	li $a1, BITMAP_HEIGHT
-	jal generate_bitmap
-	move $s0, $v0
-	move $s1, $v1
-
-	# [process bitmap]
-	move $a0, $s0
-	move $a1, $s1
-	la $s2, vertex_data
-	move $a2, $s2
-	jal draw_triangle
-
-	# [save to file]
-	write_file:
-	# open output file
-	li $v0, 13
-	la $a0, output_filename
-	li $a1, 1 # write-only mode
-	syscall
-	bltz $v0, exit
-	move $t0, $v0
-
-	# write BMP headers to file
-	li $v0, 15
-	move $a0, $t0
-	la $a1, BITMAPFILEHEADER
-	lw $a2, 2($a1)
-	syscall
-
-	li $v0, 15
-	move $a0, $t0
-	move $a1, $s0
-	lw $a2, ($a1)
-	syscall
-	# TODO: error check
-
-	# write image contents to file
-	li $v0, 15
-	move $a0, $t0
-	move $a1, $s1
-	lw $a2, 20($s0)
-	syscall
-	# TODO: error check
-
-	# close the file
-	li $v0, 16
-	move $a0, $t0
-	syscall
-
-	exit:
-	li $v0, 10
-	syscall
-
-
 ### MACROS ###
 
 	# assumptions:
@@ -183,29 +126,129 @@ main:
 	# assumptions:
     #  %regMin cannot be %regMax
     #  %regChecked can be neither %regMin nor %regMax
-    #  %regResult may be %regMin or %regMax
+    #  %regResult may be %regMin, %regMax or %regChecked
     #  only %regChecked value is preserved (if it is not %regResult)
     # result:
-    #  1 if in range
-    #  0 if not in range
+    #  %regResult - 1 if in range, 0 otherwise
     .macro check_if_in_range (%regMin, %regMax, %regChecked, %regResult)
-    subu %regMin, %regChecked, %regMin
-    subu %regMax, %regChecked, %regMax
-    mul %regMin, %regMin, %regMax
-    mfhi %regMax
-    slt %regMax, %regMax, $zero
-    seq %regMin, %regMin, $zero
-    or %regResult, %regMin, %regMax
+    sge %regMin, %regChecked, %regMin
+    sle %regMax, %regChecked, %regMax
+    and %regResult, %regMin, %regMax
     .end_macro
 
 
+### MAIN FUNCTION ###
+main:
+	# [validate input]
+	li $a0, BITMAP_WIDTH
+	li $a1, BITMAP_WIDTH
+	la $a2, vertex_data
+	jal validate_input
+	bnez $v0, print_error
+
+	# [prepare bitmap header and data]
+	li $a0, BITMAP_WIDTH	
+	li $a1, BITMAP_HEIGHT
+	jal generate_bitmap
+	move $s0, $v0
+	move $s1, $v1
+
+	# [process bitmap]
+	move $a0, $s0
+	move $a1, $s1
+	la $s2, vertex_data
+	move $a2, $s2
+	jal draw_triangle
+
+	# [save to file]
+	jal save_bitmap
+	beqz $v0, exit
+	
+	print_error:
+	li $t0, 1
+	li $t1, 5
+	addu $t2, $t0, $t1
+	check_if_in_range($t0, $t1, $v0, $t0)
+	movn $t2, $v0, $t0
+	sll $t2, $t2, 6 # multiply by 64 (bytes per string)
+	li $v0, 4
+	la $a0, error_strings
+	syscall
+	li $v0, 4
+	la $a0, error_strings($t2)
+	syscall
+
+	exit:
+	li $v0, 10
+	syscall
+
+
 ### FUNCTIONS ###
+
 	# parameters:
-	# $a0 - width
-	# $a1 - height
+	#  $a0 - bitmap width
+	#  $a1 - bitmap height
+	#  $a2 - pointer to vertices data
 	# returns:
-	# $v0 - pointer to BITMAPINFOHEADER
-	# $v1 - pointer to image data
+	#  $v0 - 0 for valid data, positive error number otherwise
+validate_input:
+	move $v0, $zero
+	subiu $t0, $a0, 1
+	subiu $t1, $a1, 1
+	slt $t0, $t0, $zero
+	slt $t1, $t1, $zero
+	or $t0, $t0, $t1
+	beqz $t0, validate_vertices
+	li $v0, 1 # non-positive bitmap size
+	jr $ra
+	validate_vertices:
+	li $t0, 3 # initialize loop counter for three vertices
+	move $t1, $a2
+	validate_vertices_loop:
+	subiu $t0, $t0, 1
+	bltz $t0, validate_shape
+	lw $t2, ($t1)
+	lw $t3, 4($t1)
+	move $t4, $zero
+	move $t5, $a0
+	check_if_in_range($t4, $t5, $t2, $t2) # check if 0 <= X <= width
+	move $t4, $zero
+	move $t5, $a1
+	check_if_in_range($t4, $t5, $t3, $t3) # check if 0 <= Y <= height
+	and $t2, $t2, $t3
+	addiu $t1, $t1, 12
+	bnez $t2, validate_vertices_loop
+	li $v0, 2 # vertex outside the bitmap
+	jr $ra
+	validate_shape:
+	li $t9, 3 # not a triangle
+	lw $t0, ($a2)   # X1
+	lw $t1, 4($a2)  # Y1
+	lw $t2, 12($a2) # X2
+	lw $t3, 16($a2) # Y2
+	lw $t4, 24($a2) # X3
+	lw $t5, 28($a2) # Y3
+	seq $t6, $t0, $t2 # compare XY1 and XY2
+	seq $t7, $t1, $t3
+	and $t6, $t6, $t7
+	movn $v0, $t9, $t6
+	seq $t6, $t0, $t4 # compare XY1 and XY3
+	seq $t7, $t1, $t5
+	and $t6, $t6, $t7
+	movn $v0, $t9, $t6
+	seq $t6, $t2, $t4 # compare XY2 and XY3
+	seq $t7, $t3, $t5
+	and $t6, $t6, $t7
+	movn $v0, $t9, $t6
+	jr $ra
+	
+
+	# parameters:
+	#  $a0 - width
+	#  $a1 - height
+	# returns:
+	#  $v0 - pointer to BITMAPINFOHEADER
+	#  $v1 - pointer to image data
 generate_bitmap:
 	move $t0, $a0
 	move $t1, $a1
@@ -234,7 +277,7 @@ generate_bitmap:
 	# TODO: error on too large data
 	# allocate space for pixel data
 	li $v0, 9
-	move $a0, $t5
+	move $a0, $t4
 	syscall
 	# place returned pointers in v-registers
 	move $v1, $v0
@@ -243,9 +286,9 @@ generate_bitmap:
 
 
 	# parameters:
-	# $a0 - pointer to bitmap details (BITMAPINFOHEADER)
-	# $a1 - pointer to bitmap data
-	# $a2 - pointer to vertices data
+	#  $a0 - pointer to bitmap details (BITMAPINFOHEADER)
+	#  $a1 - pointer to bitmap data
+	#  $a2 - pointer to vertices data
 draw_triangle:
 	# prologue
 	subiu $sp, $sp, 4
@@ -470,4 +513,67 @@ draw_triangle:
 	lw $s1, 4($sp)
 	lw $s0, ($sp)
 	addiu $sp, $sp, 32
+	jr $ra
+
+
+	# parameters:
+	#  $a0 - pointer to bitmap details (BITMAPINFOHEADER)
+	#  $a1 - pointer to bitmap data
+	# returns:
+	#  $v0 - 0 on success, positive error code otherwise
+save_bitmap:
+	move $t0, $a0
+	move $t1, $a1
+	
+	# open output file
+	li $v0, 13
+	la $a0, output_filename
+	li $a1, 1 # write-only mode
+	syscall
+	move $t2, $v0
+	bgez $t2, write_file_header
+	li $v0, 4 # could not open the file
+	jr $ra
+
+	# write BMP headers to file
+	write_file_header:
+	li $v0, 15
+	move $a0, $t2
+	la $a1, BITMAPFILEHEADER
+	lw $t3, 2($a1)
+	move $a2, $t3
+	syscall
+	beq $v0, $t3, write_info_header
+	li $v0, 5 # error writing to file
+	jr $ra
+	
+	write_info_header:
+	li $v0, 15
+	move $a0, $t2
+	move $a1, $t0
+	lw $t3, ($a1)
+	move $a2, $t3
+	syscall
+	beq $v0, $t3, write_bitmap
+	li $v0, 5 # error writing to file
+	jr $ra
+
+	# write image contents to file
+	write_bitmap:
+	li $v0, 15
+	move $a0, $t2
+	move $a1, $t1
+	lw $t3, 20($t0)
+	move $a2, $t3
+	syscall
+	beq $v0, $t3, close_file
+	li $v0, 5 # error writing to file
+	jr $ra
+
+	# close the file
+	close_file:
+	li $v0, 16
+	move $a0, $t0
+	syscall
+	move $v0, $zero
 	jr $ra
