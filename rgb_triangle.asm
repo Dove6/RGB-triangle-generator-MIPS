@@ -2,13 +2,13 @@
 # given vertices
 .eqv VERTEX1_X 148
 .eqv VERTEX1_Y 51
-.eqv VERTEX1_COLOR 0xa9f7d1	 # 0xRRGGBB
+.eqv VERTEX1_COLOR 0xa9f7d1  # 0xRRGGBB
 .eqv VERTEX2_X 212
 .eqv VERTEX2_Y 121
-.eqv VERTEX2_COLOR 0xaa3af1	 # 0xRRGGBB
+.eqv VERTEX2_COLOR 0xaa3af1  # 0xRRGGBB
 .eqv VERTEX3_X 72
 .eqv VERTEX3_Y 197
-.eqv VERTEX3_COLOR 0xeb6f24	 # 0xRRGGBB
+.eqv VERTEX3_COLOR 0xeb6f24  # 0xRRGGBB
 
 # settings
 .eqv BITMAP_WIDTH 256
@@ -19,25 +19,32 @@
 ##### INTERNAL DATA #####
 .data
 	.half -1  # padding (for word-aligning bitmap header)
-	bitmap_file_header:	 # BITMAPFILEHEADER structure template
+	bitmap_file_header:  # BITMAPFILEHEADER structure template
 	.ascii "BM"  # (+0x0) bfType
 	.word 14     # (+0x2) bfSize
 	.half 0      # (+0x6) bfReserved1
 	.half 0      # (+0x8) bfReserved2
 	.word 54     # (+0xa) bfOffBits
+    # symbols for info header-related offsets
+	.eqv BFSIZE 2
 
-	bitmap_info_header: # BITMAPINFOHEADER structure template
+	bitmap_info_header:  # BITMAPINFOHEADER structure template
 	.word 40  # (+0x00) biSize
 	.word 0   # (+0x04) biWidth (to specify)
-	.word 0	  # (+0x08) biHeight (to specify)
-	.half 1	  # (+0x0c) biPlanes
+	.word 0   # (+0x08) biHeight (to specify)
+	.half 1   # (+0x0c) biPlanes
 	.half 24  # (+0x0e) biBitCount
-	.word 0	  # (+0x10) biCompression
-	.word 0	  # (+0x14) biSizeImage (to specify)
-	.word 0	  # (+0x18) biXPelsPerMeter (ignored)
-	.word 0	  # (+0x1c) biYPelsPerMeter (ignored)
-	.word 0	  # (+0x20) biClrUsed
-	.word 0	  # (+0x24) biClrImportant
+	.word 0   # (+0x10) biCompression
+	.word 0   # (+0x14) biSizeImage (to specify)
+	.word 0   # (+0x18) biXPelsPerMeter (ignored)
+	.word 0   # (+0x1c) biYPelsPerMeter (ignored)
+	.word 0   # (+0x20) biClrUsed
+	.word 0   # (+0x24) biClrImportant
+    # symbols for info header-related offsets
+	.eqv BISIZE 0
+	.eqv BIWIDTH 4
+	.eqv BIHEIGHT 8
+	.eqv BISIZEIMAGE 20
 
 	output_filename:
 	.asciiz RESULT_FILENAME
@@ -45,21 +52,40 @@
 	vertex_data:  # three vertex structures (3 words each)
 	.word VERTEX1_X      # (+0x00) X1
 	.word VERTEX1_Y      # (+0x04) Y1
-	.word VERTEX1_COLOR	 # (+0x08) B1
+	.word VERTEX1_COLOR  # (+0x08) B1
                          # (+0x09) G1
                          # (+0x0a) R1
 	.word VERTEX2_X      # (+0x0c) X2
 	.word VERTEX2_Y      # (+0x10) Y2
-	.word VERTEX2_COLOR	 # (+0x14) B2
+	.word VERTEX2_COLOR  # (+0x14) B2
                          # (+0x15) G2
                          # (+0x16) R2
 	.word VERTEX3_X      # (+0x18) X3
 	.word VERTEX3_Y      # (+0x1c) Y3
-	.word VERTEX3_COLOR	 # (+0x20) B3
+	.word VERTEX3_COLOR  # (+0x20) B3
                          # (+0x21) G3
                          # (+0x22) R3
+    # symbols for vertices-related offsets
+    .eqv X1 0
+    .eqv Y1 4
+    .eqv COLOR1 8
+    .eqv B1 8
+    .eqv G1 9
+    .eqv R1 10
+    .eqv X2 12
+    .eqv Y2 16
+    .eqv COLOR2 20
+    .eqv B2 20
+    .eqv G2 21
+    .eqv R2 22
+    .eqv X3 24
+    .eqv Y3 28
+    .eqv COLOR3 32
+    .eqv B3 32
+    .eqv G3 33
+    .eqv R3 34
 
-	error_strings:	# array of error messages with a maximal length of 63 characters
+	error_strings:  # array of error messages with a maximal length of 63 characters
 	.align 3
 	.asciiz "An error has occured: "               # common error message
 	.double 0, 0, 0, 0, 0 # padding
@@ -218,8 +244,8 @@ validate_input:
 	validate_vertices_loop:
 	subiu $t0, $t0, 1
 	bltz $t0, validate_shape
-	lw $t2, ($t1)
-	lw $t3, 4($t1)
+	lw $t2, ($t1)   # X
+	lw $t3, 4($t1)  # Y
 	check_if_in_range($zero, $a0, $t2, $t4, $t2)  # check if 0 <= X <= width
 	check_if_in_range($zero, $a1, $t3, $t4, $t3)  # check if 0 <= Y <= height
 	and $t2, $t2, $t3
@@ -230,12 +256,12 @@ validate_input:
 
 	validate_shape:
 	li $t9, -3  # error: not a triangle
-	lw $t0, ($a2)    # X1
-	lw $t1, 4($a2)   # Y1
-	lw $t2, 12($a2)  # X2
-	lw $t3, 16($a2)  # Y2
-	lw $t4, 24($a2)  # X3
-	lw $t5, 28($a2)  # Y3
+	lw $t0, X1($a2)
+	lw $t1, Y1($a2)
+	lw $t2, X2($a2)
+	lw $t3, Y2($a2)
+	lw $t4, X3($a2)
+	lw $t5, Y3($a2)
 	seq $t6, $t0, $t2  # compare X1 with X2 and Y1 with Y2
 	seq $t7, $t1, $t3
 	and $t6, $t6, $t7
@@ -273,12 +299,12 @@ generate_bitmap:
 	header_copy_loop:
 	lw $t5, bitmap_info_header($t4)
 	addu $t6, $t3, $t4
-	sw $t5, ($t6)
+	sw $t5, BISIZE($t6)
 	addiu $t4, $t4, 4
 	blt $t4, $t2, header_copy_loop
 	# adjust the bitmap header
-	sw $t0, 4($t3)  # width
-	sw $t1, 8($t3)  # height
+	sw $t0, BIWIDTH($t3)   # width
+	sw $t1, BIHEIGHT($t3)  # height
 	sll $t4, $t0, 1     #
 	addu $t4, $t4, $t0  # multiply width by 3
 	pad_to_word($t4, $t4)
@@ -289,7 +315,7 @@ generate_bitmap:
 	jr $ra
 
 	proceed_with_data_size:
-	sw $t4, 20($t3)  # pixel data size
+	sw $t4, BISIZEIMAGE($t3)  # pixel data size
 	# allocate space for pixel data
 	li $v0, 9
 	move $a0, $t4
@@ -317,7 +343,7 @@ draw_triangle:
 	sw $s6, 24($sp)
 	sw $s7, 28($sp)
 
-	# stack layout
+	## stack layout
 	#  (+0x34) helper barycentric equation factor for the second vertex
 	#  (+0x30) helper barycentric equation factor for the first vertex
 	#  (+0x2c) vertex max Y
@@ -325,8 +351,15 @@ draw_triangle:
 	#  (+0x24) vertex max X
 	#  (+0x20) vertex min X
 	#  (+0x00) saved registers (8 * 4 bytes)
+	.eqv FACTOR2 52
+	.eqv FACTOR1 48
+	.eqv MAX_Y 44
+	.eqv MIN_Y 40
+	.eqv MAX_X 36
+	.eqv MIN_X 32
 
-	# saved registers layout
+	## registers layout
+	# saved registers layout:
 	#  $s0 - row counter
 	#  $s1 - column counter
 	#  $s2 - pixel memory offset
@@ -335,22 +368,22 @@ draw_triangle:
 	#  $s5 - barycentric equation line constant summand for the second vertex
 	#  $s6 - background color
 
-	# temporary registers layout
+	# temporary registers layout:
 	#  $t0 - current color
 
-	# floating-point registers layout
+	# floating-point registers layout:
 	#  $f0 - zero
 	#  $f1 - barycentric equations denominator
 	#  $f2-$f31 - temporary
 
 	mtc1 $zero, $f0  # place 0 in floating-point register (for further calculations)
 
-	lw $s0, 8($a0)
+	lw $s0, BIHEIGHT($a0)
 	## calculate background color
 	li $s6, 0x00ffffff
-	lw $t9, 32($a2)
-	lw $t8, 20($a2)
-	lw $t7, 8($a2)
+	lw $t9, COLOR3($a2)
+	lw $t8, COLOR2($a2)
+	lw $t7, COLOR1($a2)
 	li $t6, 0x00f0f0f0
 	and $t5, $t9, $t6
 	seq $t5, $t5, $t6
@@ -367,12 +400,12 @@ draw_triangle:
 	## calculate constant barymetric equations parts
 	# calculate barymetric equations denominator: (Y2 - Y3)(X1 - X3)+(X3 - X2)(Y1 - Y3)
 	calc_denominator:
-	lw $t9, 28($a2)  # Y3
-	lw $t8, 24($a2)  # X3
-	lw $t7, 16($a2)  # Y2
-	lw $t6, 12($a2)  # X2
-	lw $t5, 4($a2)   # Y1
-	lw $t4, ($a2)    # X1
+	lw $t9, Y3($a2)
+	lw $t8, X3($a2)
+	lw $t7, Y2($a2)
+	lw $t6, X2($a2)
+	lw $t5, Y1($a2)
+	lw $t4, X1($a2)
 	subu $t7, $t7, $t9
 	subu $t6, $t8, $t6
 	subu $t5, $t5, $t9
@@ -383,59 +416,59 @@ draw_triangle:
 	mtc1 $t7, $f1     #
 	cvt.s.w $f1, $f1  # save the denominator in $f1
 	# calculate barycentric equations helper factors
-	lw $t8, 16($a2)  # Y2
-	lw $t7, 4($a2)	 # Y1
+	lw $t8, Y2($a2)
+	lw $t7, Y1($a2)
 	subu $t8, $t8, $t9
 	subu $t7, $t9, $t7
-	sw $t8, 48($sp)
-	sw $t7, 52($sp)
+	sw $t8, FACTOR1($sp)
+	sw $t7, FACTOR2($sp)
 
 	## calculate clipping rectangle position
 	# calculate min and max vertex X position
-	lw $t9, ($a2)
-	lw $t8, 12($a2)
-	lw $t7, 24($a2)
+	lw $t9, X1($a2)
+	lw $t8, X2($a2)
+	lw $t7, X3($a2)
 	min_max_of_three($t9, $t8, $t7, $t6, $t5)
-	sw $t6, 32($sp)
-	sw $t5, 36($sp)
+	sw $t6, MIN_X($sp)
+	sw $t5, MAX_X($sp)
 	# calculate min and max vertex Y position
-	lw $t9, 4($a2)
-	lw $t8, 16($a2)
-	lw $t7, 28($a2)
+	lw $t9, Y1($a2)
+	lw $t8, Y2($a2)
+	lw $t7, Y3($a2)
 	min_max_of_three($t9, $t8, $t7, $t6, $t5)
-	sw $t6, 40($sp)
-	sw $t5, 44($sp)
+	sw $t6, MIN_Y($sp)
+	sw $t5, MAX_Y($sp)
 
 	row_loop:
 	subiu $s0, $s0, 1
 	bltz $s0, drawing_end
-	lw $s1, 4($a0)
+	lw $s1, BIWIDTH($a0)
 
 	## calculate barycentric equation summands (constant per line)
 	# first: (X3 - X2)(Yp - Y3)
-	lw $t9, 28($a2)  # Y3
-	lw $t8, 24($a2)  # X3
-	lw $t7, 12($a2)  # X2
+	lw $t9, Y3($a2)
+	lw $t8, X3($a2)
+	lw $t7, X2($a2)
 	subu $t7, $t8, $t7
 	subu $t9, $s0, $t9
 	mul $s4, $t7, $t9  # save the summand in $s4
 	# second: (X1 - X3)(Yp - Y3)
-	lw $t7, ($a2) # X1
+	lw $t7, X1($a2)
 	subu $t7, $t7, $t8
 	mul $s5, $t7, $t9  # save the summand in $s5
 
 	## calculate memory offset of the last column in the row
 	calc_offset:
-	lw $s2, 4($a0)
+	lw $s2, BIWIDTH($a0)
 	pad_to_word($s2, $s2)
 	mulu $s2, $s2, $s0  # multiply padded image width by current row number
 	addu $s2, $s2, $s1  # add last column offset
-	sll $t9, $s2, 1	    #
+	sll $t9, $s2, 1     #
 	addu $s2, $t9, $s2  # multiply by 3 (bytes per pixels)
-	
+
 	## check if row is inside the clipping rectangle
-	lw $t9, 40($sp)
-	lw $t8, 44($sp)
+	lw $t9, MIN_Y($sp)
+	lw $t8, MAX_Y($sp)
 	check_if_in_range($t9, $t8, $s0, $t9, $s3)
 
 	column_loop:
@@ -448,15 +481,15 @@ draw_triangle:
 	# check vertically
 	beqz $s3, store_pixel
 	# check horizontally
-	lw $t9, 32($sp)
-	lw $t8, 36($sp)
+	lw $t9, MIN_X($sp)
+	lw $t8, MAX_X($sp)
 	check_if_in_range($t9, $t8, $s1, $t9, $t8)
 	beqz $t9, store_pixel
 
 	## calculate barymetric weights
 	# W1 = 100*[(Y2 - Y3)(Xp - X3) + (X3 - X2)(Yp - Y3)]/[(Y2 - Y3)(X1 - X3)+(X3 - X2)(Y1 - Y3)]
-	lw $t9, 48($sp)  # Y2 - Y3
-	lw $t8, 24($a2)  # X3
+	lw $t9, FACTOR1($sp)  # Y2 - Y3
+	lw $t8, X3($a2)
 	subu $t8, $s1, $t8
 	mul $t9, $t9, $t8
 	addu $t9, $t9, $s4
@@ -466,7 +499,7 @@ draw_triangle:
 	c.lt.s $f2, $f0
 	bc1t store_pixel
 	# W2 = 100*[(Y3 - Y1)(Xp - X3) + (X1 - X3)(Yp - Y3)]/[(Y2 - Y3)(X1 - X3)+(X3 - X2)(Y1 - Y3)]
-	lw $t7, 52($sp)  # Y3 - Y1
+	lw $t7, FACTOR2($sp)  # Y3 - Y1
 	mul $t8, $t8, $t7
 	addu $t8, $t8, $s5
 	mtc1 $t8, $f3  # $f3 = W2
@@ -475,8 +508,8 @@ draw_triangle:
 	c.lt.s $f3, $f0
 	bc1t store_pixel
 	# W3 = 100 - W1 - W2
-	li $t7, 1		  #
-	mtc1 $t7, $f4	  #
+	li $t7, 1         #
+	mtc1 $t7, $f4     #
 	cvt.s.w $f4, $f4  # li.s $f4, 100.0
 	sub.s $f4, $f4, $f2
 	sub.s $f4, $f4, $f3  # $f4 = W3
@@ -485,9 +518,9 @@ draw_triangle:
 
 	## calculate color
 	move $t0, $zero
-	lw $t9, 8($a2)	 # C1
-	lw $t8, 20($a2)  # C2
-	lw $t7, 32($a2)  # C3
+	lw $t9, COLOR1($a2)  # C1
+	lw $t8, COLOR2($a2)  # C2
+	lw $t7, COLOR3($a2)  # C3
 	# red
 	blend_color($t9, $t8, $t7, 16, $f2, $f3, $f4, $t6)
 	sll $t0, $t6, 16
@@ -548,7 +581,7 @@ save_bitmap_to_file:
 	li $v0, 15
 	move $a0, $t2
 	la $a1, bitmap_file_header
-	lw $t3, 2($a1)
+	lw $t3, BFSIZE($a1)
 	move $a2, $t3
 	syscall
 	beq $v0, $t3, write_info_header
@@ -559,7 +592,7 @@ save_bitmap_to_file:
 	li $v0, 15
 	move $a0, $t2
 	move $a1, $t0
-	lw $t3, ($a1)
+	lw $t3, BISIZE($a1)
 	move $a2, $t3
 	syscall
 	beq $v0, $t3, write_bitmap
@@ -571,7 +604,7 @@ save_bitmap_to_file:
 	li $v0, 15
 	move $a0, $t2
 	move $a1, $t1
-	lw $t3, 20($t0)
+	lw $t3, BISIZEIMAGE($t0)
 	move $a2, $t3
 	syscall
 	beq $v0, $t3, close_file
