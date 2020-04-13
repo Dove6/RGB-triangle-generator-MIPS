@@ -107,7 +107,7 @@
 
 .text
 ##### MACROS #####
-	.macro pad_to_word (%regValue, %regResult)
+	.macro pad_to_word(%regValue, %regResult)
 	# %regValue may be %regResult
 	addiu %regResult, %regValue, 3
 	andi %regResult, -4
@@ -128,14 +128,25 @@
 	movn %regResultMin, %regNumber3, %regNumber1
 	.end_macro
 
-	.macro check_if_in_range (%regMin, %regMax, %regChecked, %regTemporary, %regResult)
-	# neither %regChecked nor %regResult cannot be used as $regTemporary
-	# %regMax cannot be %regTemporary and %regTemporary cannot be %regResult
+	.macro check_if_in_range(%regMin, %regMax, %regChecked, %regTemporary, %regResult)
+	# neither %regMax nor %regChecked can be used as %regTemporary
+	# %regResult cannot be %regTemporary
 	# values of %regTemporary and %regResult are overwritten
 	# result:
 	#  %regResult - 1 if in range, 0 otherwise
 	sge %regTemporary, %regChecked, %regMin
 	sle %regResult, %regChecked, %regMax
+	and %regResult, %regTemporary, %regResult
+	.end_macro
+
+	.macro compare_points(%regX1, %regY1, %regX2, %regY2, %regTemporary, %regResult)
+	# neither %regY1 nor %regY2 can be used as %regResult
+	# %regResult cannot be %regTemporary
+	# values of %regTemporary and %regResult are overwritten
+	# result:
+	#  %regResult - 1 if points have the same coordinates, 0 otherwise
+	seq %regTemporary, %regX1, %regX2
+	seq %regResult, %regY1, %regY2
 	and %regResult, %regTemporary, %regResult
 	.end_macro
 
@@ -169,16 +180,19 @@
 
 ### MAIN FUNCTION ###
 main:
+	la $s2, vertex_data
+	li $s3, BITMAP_WIDTH
+	li $s4, BITMAP_HEIGHT
 	# validate input
-	li $a0, BITMAP_WIDTH
-	li $a1, BITMAP_WIDTH
-	la $a2, vertex_data
+	move $a0, $s3
+	move $a1, $s4
+	move $a2, $s2
 	jal validate_input
 	bltz $v0, print_error  # handle the error on negative return value
 
 	# prepare bitmap header and data buffer
-	li $a0, BITMAP_WIDTH
-	li $a1, BITMAP_HEIGHT
+	move $a0, $s3
+	move $a1, $s4
 	jal generate_bitmap
 	bltz $v0, print_error  # handle the error on negative return value
 	move $s0, $v0
@@ -187,7 +201,6 @@ main:
 	# process the bitmap
 	move $a0, $s0
 	move $a1, $s1
-	la $s2, vertex_data
 	move $a2, $s2
 	jal draw_triangle
 
@@ -239,7 +252,7 @@ validate_input:
 	jr $ra
 
 	validate_vertices:
-	li $t0, 3  # error: initialize loop counter for three vertices
+	li $t0, 3  # initialize loop counter for three vertices
 	move $t1, $a2
 	validate_vertices_loop:
 	subiu $t0, $t0, 1
@@ -262,17 +275,11 @@ validate_input:
 	lw $t3, Y2($a2)
 	lw $t4, X3($a2)
 	lw $t5, Y3($a2)
-	seq $t6, $t0, $t2  # compare X1 with X2 and Y1 with Y2
-	seq $t7, $t1, $t3
-	and $t6, $t6, $t7
+	compare_points($t0, $t1, $t2, $t3, $t7, $t6)  # point1 and point2
 	movn $v0, $t9, $t6  # indicate an error if points are identical
-	seq $t6, $t0, $t4  # compare X1 with X3 and Y1 with Y3
-	seq $t7, $t1, $t5
-	and $t6, $t6, $t7
+	compare_points($t0, $t1, $t4, $t5, $t7, $t6)  # point1 and point3
 	movn $v0, $t9, $t6  # indicate an error if points are identical
-	seq $t6, $t2, $t4  # compare X2 with X3 and Y2 with Y3
-	seq $t7, $t3, $t5
-	and $t6, $t6, $t7
+	compare_points($t2, $t3, $t4, $t5, $t7, $t6)  # point2 and point3
 	movn $v0, $t9, $t6  # indicate an error if points are identical
 	jr $ra
 
@@ -287,21 +294,22 @@ generate_bitmap:
 
 	move $t0, $a0
 	move $t1, $a1
-	lw $t2, bitmap_info_header
+	lw $t2, bitmap_info_header+BISIZE
 	# allocate memory for bitmap header
 	li $v0, 9
 	move $a0, $t2
 	syscall
 	move $t3, $v0
+
 	# copy template data to allocated header
 	move $t4, $zero
-
 	header_copy_loop:
 	lw $t5, bitmap_info_header($t4)
 	addu $t6, $t3, $t4
-	sw $t5, BISIZE($t6)
+	sw $t5, ($t6)
 	addiu $t4, $t4, 4
 	blt $t4, $t2, header_copy_loop
+
 	# adjust the bitmap header
 	sw $t0, BIWIDTH($t3)   # width
 	sw $t1, BIHEIGHT($t3)  # height
@@ -374,17 +382,16 @@ draw_triangle:
 	# floating-point registers layout:
 	#  $f0 - zero
 	#  $f1 - barycentric equations denominator
-	#  $f2-$f31 - temporary
 
 	mtc1 $zero, $f0  # place 0 in floating-point register (for further calculations)
 
 	lw $s0, BIHEIGHT($a0)
 	## calculate background color
-	li $s6, 0x00ffffff
+	li $s6, 0xffffff
 	lw $t9, COLOR3($a2)
 	lw $t8, COLOR2($a2)
 	lw $t7, COLOR1($a2)
-	li $t6, 0x00f0f0f0
+	li $t6, 0xf0f0f0
 	and $t5, $t9, $t6
 	seq $t5, $t5, $t6
 	move $t3, $t5       # increment if first vertex is whitish
@@ -395,7 +402,7 @@ draw_triangle:
 	seq $t5, $t5, $t6
 	addu $t3, $t3, $t5  # increment if third vertex is whitish
 	blt $t3, 2, calc_denominator
-	li $s6, 0x00000000  # if 2 or more vertices are whitish, make background black
+	li $s6, 0x000000  # if 2 or more vertices are whitish, make background black
 
 	## calculate constant barymetric equations parts
 	# calculate barymetric equations denominator: (Y2 - Y3)(X1 - X3)+(X3 - X2)(Y1 - Y3)
@@ -469,7 +476,7 @@ draw_triangle:
 	## check if row is inside the clipping rectangle
 	lw $t9, MIN_Y($sp)
 	lw $t8, MAX_Y($sp)
-	check_if_in_range($t9, $t8, $s0, $t9, $s3)
+	check_if_in_range($t9, $t8, $s0, $t9, $s3)  # save result in $s3
 
 	column_loop:
 	subiu $s1, $s1, 1
