@@ -205,8 +205,9 @@ main:
 	jal draw_triangle
 
 	## save it to file
-	move $a0, $s0
-	move $a1, $s1
+	la $a0, output_filename
+	move $a1, $s0
+	move $a2, $s1
 	jal save_bitmap_to_file
 	bgez $v0, exit  # jump over the error handling on return value >= 0
 
@@ -562,17 +563,18 @@ draw_triangle:
 
 save_bitmap_to_file:
 	# parameters:
-	#  $a0 - address of bitmap details (BITMAPINFOHEADER)
-	#  $a1 - address of bitmap data
+	#  $a0 - address of null-terminated output filename string
+	#  $a1 - address of bitmap details (BITMAPINFOHEADER)
+	#  $a2 - address of bitmap data
 	# returns:
 	#  $v0 - 0 on success, positive error code otherwise
 
-	move $t0, $a0
-	move $t1, $a1
+	move $t0, $a1
+	move $t1, $a2
 
 	## open output file
 	li $v0, 13
-	la $a0, output_filename
+	# filename already in $a0
 	li $a1, 1  # write-only mode
 	syscall
 	move $t2, $v0
