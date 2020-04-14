@@ -113,19 +113,19 @@
 	andi %regResult, -4
 	.end_macro
 
-	.macro min_max_of_three(%regNumber1, %regNumber2, %regNumber3, %regResultMin, %regResultMax)
-	# only %regNumber2 and %regNumber3 values are preserved
+	.macro min_max_of_three(%regNumber1, %regNumber2, %regNumber3, %regTemporary, %regResultMin, %regResultMax)
 	# no register may occur more than once in the argument list
+	# (except %regResult1, which can be used as %regTemporary)
 	move %regResultMin, %regNumber1
 	move %regResultMax, %regNumber1
-	sgtu %regNumber1, %regNumber2, %regResultMax
-	movn %regResultMax, %regNumber2, %regNumber1
-	sltu %regNumber1, %regNumber2, %regResultMin
-	movn %regResultMin, %regNumber2, %regNumber1
-	sgtu %regNumber1, %regNumber3, %regResultMax
-	movn %regResultMax, %regNumber3, %regNumber1
-	sltu %regNumber1, %regNumber3, %regResultMin
-	movn %regResultMin, %regNumber3, %regNumber1
+	sgtu %regTemporary, %regNumber2, %regResultMax
+	movn %regResultMax, %regNumber2, %regTemporary
+	sltu %regTemporary, %regNumber2, %regResultMin
+	movn %regResultMin, %regNumber2, %regTemporary
+	sgtu %regTemporary, %regNumber3, %regResultMax
+	movn %regResultMax, %regNumber3, %regTemporary
+	sltu %regTemporary, %regNumber3, %regResultMin
+	movn %regResultMin, %regNumber3, %regTemporary
 	.end_macro
 
 	.macro check_if_in_range(%regMin, %regMax, %regChecked, %regTemporary, %regResult)
@@ -183,14 +183,14 @@ main:
 	la $s2, vertex_data
 	li $s3, BITMAP_WIDTH
 	li $s4, BITMAP_HEIGHT
-	# validate input
+	## validate input
 	move $a0, $s3
 	move $a1, $s4
 	move $a2, $s2
 	jal validate_input
 	bltz $v0, print_error  # handle the error on negative return value
 
-	# prepare bitmap header and data buffer
+	## prepare bitmap header and data buffer
 	move $a0, $s3
 	move $a1, $s4
 	jal generate_bitmap
@@ -198,19 +198,19 @@ main:
 	move $s0, $v0
 	move $s1, $v1
 
-	# process the bitmap
+	## process the bitmap
 	move $a0, $s0
 	move $a1, $s1
 	move $a2, $s2
 	jal draw_triangle
 
-	# save it to file
+	## save it to file
 	move $a0, $s0
 	move $a1, $s1
 	jal save_bitmap_to_file
 	bgez $v0, exit  # jump over the error handling on return value >= 0
 
-	# handle errors
+	## handle errors
 	print_error:
 	subu $t3, $zero, $v0
 	li $t0, 1
@@ -226,7 +226,7 @@ main:
 	la $a0, error_strings($t2)  # print more specific error info
 	syscall
 
-	# finish the execution
+	## finish the execution
 	exit:
 	li $v0, 10
 	syscall
@@ -294,13 +294,14 @@ generate_bitmap:
 
 	move $t0, $a0
 	move $t1, $a1
+
+	## prepare header
 	lw $t2, bitmap_info_header+BISIZE
 	# allocate memory for bitmap header
 	li $v0, 9
 	move $a0, $t2
 	syscall
 	move $t3, $v0
-
 	# copy template data to allocated header
 	move $t4, $zero
 	header_copy_loop:
@@ -309,26 +310,25 @@ generate_bitmap:
 	sw $t5, ($t6)
 	addiu $t4, $t4, 4
 	blt $t4, $t2, header_copy_loop
-
 	# adjust the bitmap header
-	sw $t0, BIWIDTH($t3)   # width
-	sw $t1, BIHEIGHT($t3)  # height
+	sw $t0, BIWIDTH($t3)
+	sw $t1, BIHEIGHT($t3)
 	sll $t4, $t0, 1     #
 	addu $t4, $t4, $t0  # multiply width by 3
 	pad_to_word($t4, $t4)
 	mulu $t4, $t4, $t1
 	mfhi $t5  # check for too big size
 	beqz $t5, proceed_with_data_size
-	li $v0, -4
+	li $v0, -4  # error: size too large
 	jr $ra
 
 	proceed_with_data_size:
 	sw $t4, BISIZEIMAGE($t3)  # pixel data size
-	# allocate space for pixel data
+	## allocate space for pixel data
 	li $v0, 9
 	move $a0, $t4
 	syscall
-	# place returned pointers in v-registers
+	## place returned addresses in v-registers
 	move $v1, $v0
 	move $v0, $t3
 	jr $ra
@@ -336,12 +336,12 @@ generate_bitmap:
 
 draw_triangle:
 	# parameters:
-	#  $a0 - pointer to bitmap details (BITMAPINFOHEADER)
-	#  $a1 - pointer to bitmap data
-	#  $a2 - pointer to vertices data
+	#  $a0 - address of bitmap details (BITMAPINFOHEADER)
+	#  $a1 - address of bitmap data
+	#  $a2 - address of vertices data
 
 	## prologue
-	subiu $sp, $sp, 56
+	subiu $sp, $sp, 64
 	sw $s0, ($sp)
 	sw $s1, 4($sp)
 	sw $s2, 8($sp)
@@ -352,15 +352,19 @@ draw_triangle:
 	sw $s7, 28($sp)
 
 	## stack layout
-	#  (+0x34) helper barycentric equation factor for the second vertex
-	#  (+0x30) helper barycentric equation factor for the first vertex
+	#  (+0x3c) [X1 - X3] - helper barycentric equation factor for the second vertex Y position
+	#  (+0x38) [X3 - X2] - helper barycentric equation factor for the first vertex Y position
+	#  (+0x34) [Y3 - Y1] - helper barycentric equation factor for the second vertex X position
+	#  (+0x30) [Y2 - Y3] - helper barycentric equation factor for the first vertex X position
 	#  (+0x2c) vertex max Y
 	#  (+0x28) vertex min Y
 	#  (+0x24) vertex max X
 	#  (+0x20) vertex min X
 	#  (+0x00) saved registers (8 * 4 bytes)
-	.eqv FACTOR2 52
-	.eqv FACTOR1 48
+	.eqv FACTOR_Y2 60
+	.eqv FACTOR_Y1 56
+	.eqv FACTOR_X2 52
+	.eqv FACTOR_X1 48
 	.eqv MAX_Y 44
 	.eqv MIN_Y 40
 	.eqv MAX_X 36
@@ -413,38 +417,34 @@ draw_triangle:
 	lw $t6, X2($a2)
 	lw $t5, Y1($a2)
 	lw $t4, X1($a2)
-	subu $t7, $t7, $t9
-	subu $t6, $t8, $t6
-	subu $t5, $t5, $t9
-	subu $t4, $t4, $t8
-	mul $t7, $t7, $t4
-	mul $t6, $t6, $t5
-	addu $t7, $t7, $t6
-	mtc1 $t7, $f1     #
+	subu $t3, $t7, $t9
+	subu $t2, $t8, $t6
+	subu $t1, $t5, $t9
+	subu $t0, $t4, $t8
+	mul $t3, $t3, $t0
+	mul $t2, $t2, $t1
+	addu $t3, $t3, $t2
+	mtc1 $t3, $f1     #
 	cvt.s.w $f1, $f1  # save the denominator in $f1
 	# calculate barycentric equations helper factors
-	lw $t8, Y2($a2)
-	lw $t7, Y1($a2)
-	subu $t8, $t8, $t9
-	subu $t7, $t9, $t7
-	sw $t8, FACTOR1($sp)
-	sw $t7, FACTOR2($sp)
+	subu $t3, $t7, $t9  # Y2 - Y3
+	subu $t2, $t9, $t5  # Y3 - Y1
+	sw $t3, FACTOR_X1($sp)
+	sw $t2, FACTOR_X2($sp)
+	subu $t3, $t8, $t6  # X3 - X2
+	subu $t2, $t4, $t8  # X1 - X3
+	sw $t3, FACTOR_Y1($sp)
+	sw $t2, FACTOR_Y2($sp)
 
 	## calculate clipping rectangle position
 	# calculate min and max vertex X position
-	lw $t9, X1($a2)
-	lw $t8, X2($a2)
-	lw $t7, X3($a2)
-	min_max_of_three($t9, $t8, $t7, $t6, $t5)
-	sw $t6, MIN_X($sp)
-	sw $t5, MAX_X($sp)
+	min_max_of_three($t8, $t6, $t4, $t1, $t3, $t2)
+	sw $t3, MIN_X($sp)
+	sw $t2, MAX_X($sp)
 	# calculate min and max vertex Y position
-	lw $t9, Y1($a2)
-	lw $t8, Y2($a2)
-	lw $t7, Y3($a2)
-	min_max_of_three($t9, $t8, $t7, $t6, $t5)
-	sw $t6, MIN_Y($sp)
-	sw $t5, MAX_Y($sp)
+	min_max_of_three($t9, $t7, $t5, $t1, $t3, $t2)
+	sw $t3, MIN_Y($sp)
+	sw $t2, MAX_Y($sp)
 
 	row_loop:
 	subiu $s0, $s0, 1
@@ -454,15 +454,12 @@ draw_triangle:
 	## calculate barycentric equation summands (constant per line)
 	# first: (X3 - X2)(Yp - Y3)
 	lw $t9, Y3($a2)
-	lw $t8, X3($a2)
-	lw $t7, X2($a2)
-	subu $t7, $t8, $t7
 	subu $t9, $s0, $t9
-	mul $s4, $t7, $t9  # save the summand in $s4
+	lw $t8, FACTOR_Y1($sp)
+	mul $s4, $t8, $t9  # save the summand in $s4
 	# second: (X1 - X3)(Yp - Y3)
-	lw $t7, X1($a2)
-	subu $t7, $t7, $t8
-	mul $s5, $t7, $t9  # save the summand in $s5
+	lw $t8, FACTOR_Y2($sp)
+	mul $s5, $t8, $t9  # save the summand in $s5
 
 	## calculate memory offset of the last column in the row
 	calc_offset:
@@ -495,7 +492,7 @@ draw_triangle:
 
 	## calculate barymetric weights
 	# W1 = 100*[(Y2 - Y3)(Xp - X3) + (X3 - X2)(Yp - Y3)]/[(Y2 - Y3)(X1 - X3)+(X3 - X2)(Y1 - Y3)]
-	lw $t9, FACTOR1($sp)  # Y2 - Y3
+	lw $t9, FACTOR_X1($sp)  # Y2 - Y3
 	lw $t8, X3($a2)
 	subu $t8, $s1, $t8
 	mul $t9, $t9, $t8
@@ -506,7 +503,7 @@ draw_triangle:
 	c.lt.s $f2, $f0
 	bc1t store_pixel
 	# W2 = 100*[(Y3 - Y1)(Xp - X3) + (X1 - X3)(Yp - Y3)]/[(Y2 - Y3)(X1 - X3)+(X3 - X2)(Y1 - Y3)]
-	lw $t7, FACTOR2($sp)  # Y3 - Y1
+	lw $t7, FACTOR_X2($sp)  # Y3 - Y1
 	mul $t8, $t8, $t7
 	addu $t8, $t8, $s5
 	mtc1 $t8, $f3  # $f3 = W2
@@ -523,11 +520,11 @@ draw_triangle:
 	c.lt.s $f4, $f0
 	bc1t store_pixel
 
-	## calculate color
+	## calculate blent color
 	move $t0, $zero
-	lw $t9, COLOR1($a2)  # C1
-	lw $t8, COLOR2($a2)  # C2
-	lw $t7, COLOR3($a2)  # C3
+	lw $t9, COLOR1($a2)
+	lw $t8, COLOR2($a2)
+	lw $t7, COLOR3($a2)
 	# red
 	blend_color($t9, $t8, $t7, 16, $f2, $f3, $f4, $t6)
 	sll $t0, $t6, 16
@@ -541,16 +538,16 @@ draw_triangle:
 
 	store_pixel:
 	addu $t9, $a1, $s2  # add offset to image address
-	sb $t0, ($t9)   # store red
+	sb $t0, ($t9)   # store blue
 	srl $t0, $t0, 8
 	sb $t0, 1($t9)  # store green
 	srl $t0, $t0, 8
-	sb $t0, 2($t9)  # store blue
+	sb $t0, 2($t9)  # store red
 
 	j column_loop
 
 	drawing_end:
-	# epilogue
+	## epilogue
 	lw $s7, 28($sp)
 	lw $s6, 24($sp)
 	lw $s5, 20($sp)
@@ -559,21 +556,21 @@ draw_triangle:
 	lw $s2, 8($sp)
 	lw $s1, 4($sp)
 	lw $s0, ($sp)
-	addiu $sp, $sp, 56
+	addiu $sp, $sp, 64
 	jr $ra
 
 
 save_bitmap_to_file:
 	# parameters:
-	#  $a0 - pointer to bitmap details (BITMAPINFOHEADER)
-	#  $a1 - pointer to bitmap data
+	#  $a0 - address of bitmap details (BITMAPINFOHEADER)
+	#  $a1 - address of bitmap data
 	# returns:
 	#  $v0 - 0 on success, positive error code otherwise
 
 	move $t0, $a0
 	move $t1, $a1
 
-	# open output file
+	## open output file
 	li $v0, 13
 	la $a0, output_filename
 	li $a1, 1  # write-only mode
@@ -583,7 +580,7 @@ save_bitmap_to_file:
 	li $v0, -5  # error: could not open the file
 	jr $ra
 
-	# write BMP headers to file
+	## write BMP headers to file
 	write_file_header:
 	li $v0, 15
 	move $a0, $t2
@@ -606,7 +603,7 @@ save_bitmap_to_file:
 	li $v0, -6  # error writing to file
 	jr $ra
 
-	# write image contents to file
+	## write image contents to file
 	write_bitmap:
 	li $v0, 15
 	move $a0, $t2
@@ -618,7 +615,7 @@ save_bitmap_to_file:
 	li $v0, -6  # error writing to file
 	jr $ra
 
-	# close the file
+	## close the file
 	close_file:
 	li $v0, 16
 	move $a0, $t0
